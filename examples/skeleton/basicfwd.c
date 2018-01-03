@@ -55,6 +55,7 @@ static const struct rte_eth_conf port_conf_default = {
 /*
  * Initializes a given port using global settings and with the RX buffers
  * coming from the mbuf_pool passed as a parameter.
+ 用全局默认的配置来初始化网口。在内存池中分配接收队列和发送队列。 
  */
 static inline int
 port_init(uint8_t port, struct rte_mempool *mbuf_pool)
@@ -66,10 +67,10 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 	int retval;
 	uint16_t q;
 
-	if (port >= rte_eth_dev_count())
+	if (port >= rte_eth_dev_count())//检查网口编号 
 		return -1;
 
-	/* Configure the Ethernet device. */
+	/* Configure the Ethernet device. *//* 配置以太网设备 */  
 	retval = rte_eth_dev_configure(port, rx_rings, tx_rings, &port_conf);
 	if (retval != 0)
 		return retval;
@@ -78,7 +79,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 	if (retval != 0)
 		return retval;
 
-	/* Allocate and set up 1 RX queue per Ethernet port. */
+	/* Allocate and set up 1 RX queue per Ethernet port. *//* 为每个以太网网口分配和设置1个接收队列 */  
 	for (q = 0; q < rx_rings; q++) {
 		retval = rte_eth_rx_queue_setup(port, q, nb_rxd,
 				rte_eth_dev_socket_id(port), NULL, mbuf_pool);
@@ -86,7 +87,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 			return retval;
 	}
 
-	/* Allocate and set up 1 TX queue per Ethernet port. */
+	/* Allocate and set up 1 TX queue per Ethernet port. *//* 为每个以太网网口分配和设置1个发送队列 */  
 	for (q = 0; q < tx_rings; q++) {
 		retval = rte_eth_tx_queue_setup(port, q, nb_txd,
 				rte_eth_dev_socket_id(port), NULL);
@@ -94,12 +95,12 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 			return retval;
 	}
 
-	/* Start the Ethernet port. */
+	/* Start the Ethernet port. */ /* 开启以太网网口 */  
 	retval = rte_eth_dev_start(port);
 	if (retval < 0)
 		return retval;
 
-	/* Display the port MAC address. */
+	/* Display the port MAC address. *//* 打印网卡地址 MAC address. */  
 	struct ether_addr addr;
 	rte_eth_macaddr_get(port, &addr);
 	printf("Port %u MAC: %02" PRIx8 " %02" PRIx8 " %02" PRIx8
@@ -109,7 +110,7 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 			addr.addr_bytes[2], addr.addr_bytes[3],
 			addr.addr_bytes[4], addr.addr_bytes[5]);
 
-	/* Enable RX in promiscuous mode for the Ethernet device. */
+	/* Enable RX in promiscuous mode for the Ethernet device. */ /* 网口开启混杂模式 */  
 	rte_eth_promiscuous_enable(port);
 
 	return 0;
@@ -117,17 +118,18 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 
 /*
  * The lcore main. This is the main thread that does the work, reading from
- * an input port and writing to an output port.
+ * an input port and writing to an output port.一个线程处理一对网口，数据包一进一出。 
  */
 static __attribute__((noreturn)) void
 lcore_main(void)
 {
-	const uint8_t nb_ports = rte_eth_dev_count();
+	const uint8_t nb_ports = rte_eth_dev_count();//网口数
 	uint8_t port;
 
 	/*
 	 * Check that the port is on the same NUMA node as the polling thread
 	 * for best performance.
+	 当有NUMA结构时，检查网口是否在同一个NUMA node节点上，只有在一个NUMA node上时轮询线程效率最好。 
 	 */
 	for (port = 0; port < nb_ports; port++)
 		if (rte_eth_dev_socket_id(port) > 0 &&
@@ -139,29 +141,33 @@ lcore_main(void)
 
 	printf("\nCore %u forwarding packets. [Ctrl+C to quit]\n",
 			rte_lcore_id());
-
-	/* Run until the application is quit or killed. */
+	printf("nb_ports = %d\n",nb_ports);
+	/* Run until the application is quit or killed. *//* 死循环处理数据包的搬运 */ 
 	for (;;) {
 		/*
 		 * Receive packets on a port and forward them on the paired
 		 * port. The mapping is 0 -> 1, 1 -> 0, 2 -> 3, 3 -> 2, etc.
+		 * 一个端口接收包，然后直接转发到这对数据包上。 
+         * 如 0 -> 1, 1 -> 0, 2 -> 3, 3 -> 2 等。
 		 */
-		for (port = 0; port < nb_ports; port++) {
-
+		for (port = 0; port < nb_ports; port++) 
+		{
+			/* 从一个端口接收数据包 */  
 			/* Get burst of RX packets, from first port of pair. */
 			struct rte_mbuf *bufs[BURST_SIZE];
-			const uint16_t nb_rx = rte_eth_rx_burst(port, 0,
-					bufs, BURST_SIZE);
-
+			const uint16_t nb_rx = rte_eth_rx_burst(port, 0,bufs, BURST_SIZE);
+			printf("receive %d packets\n",nb_rx);
 			if (unlikely(nb_rx == 0))
 				continue;
 
 			/* Send burst of TX packets, to second port of pair. */
-			const uint16_t nb_tx = rte_eth_tx_burst(port ^ 1, 0,
-					bufs, nb_rx);
-
+			const uint16_t nb_tx = rte_eth_tx_burst(port ^ 1, 0,bufs, nb_rx);
+			printf("send %d packets\n",nb_tx);
+			/* 释放没有发送的数据包。 */ 
 			/* Free any unsent packets. */
-			if (unlikely(nb_tx < nb_rx)) {
+			if (unlikely(nb_tx < nb_rx)) 
+			{
+				printf("nb_tx < nb_rx %d < %d\n",nb_tx,nb_rx);
 				uint16_t buf;
 				for (buf = nb_tx; buf < nb_rx; buf++)
 					rte_pktmbuf_free(bufs[buf]);
@@ -177,9 +183,9 @@ lcore_main(void)
 int
 main(int argc, char *argv[])
 {
-	struct rte_mempool *mbuf_pool;
-	unsigned nb_ports;
-	uint8_t portid;
+	struct rte_mempool *mbuf_pool;	//使用内存池空间来容纳ring队列，接收和发送数据包
+	unsigned nb_ports;				//网卡数
+	uint8_t portid;					//网卡编号
 
 	/* Initialize the Environment Abstraction Layer (EAL). */
 	int ret = rte_eal_init(argc, argv);
@@ -188,12 +194,12 @@ main(int argc, char *argv[])
 
 	argc -= ret;
 	argv += ret;
-
+	/* 检查网卡是否为偶数 send/receive */ 
 	/* Check that there is an even number of ports to send/receive on. */
 	nb_ports = rte_eth_dev_count();
 	if (nb_ports < 2 || (nb_ports & 1))
 		rte_exit(EXIT_FAILURE, "Error: number of ports must be even\n");
-
+	/*  创建一个内存池来容纳mbufs。大小按网口多少来分配。相当于每个网口都要有一个接受和发送队列。*/  
 	/* Creates a new mempool in memory to hold the mbufs. */
 	mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS * nb_ports,
 		MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
@@ -201,7 +207,7 @@ main(int argc, char *argv[])
 	if (mbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
-	/* Initialize all ports. */
+	/* Initialize all ports. */ /* 初始化所有网口配置 */  
 	for (portid = 0; portid < nb_ports; portid++)
 		if (port_init(portid, mbuf_pool) != 0)
 			rte_exit(EXIT_FAILURE, "Cannot init port %"PRIu8 "\n",
@@ -209,7 +215,7 @@ main(int argc, char *argv[])
 
 	if (rte_lcore_count() > 1)
 		printf("\nWARNING: Too many lcores enabled. Only 1 used.\n");
-
+	/* 仅仅用一个主线程调用，相当与一个线程处理一对网口的数据包。*/ 
 	/* Call lcore_main on the master core only. */
 	lcore_main();
 

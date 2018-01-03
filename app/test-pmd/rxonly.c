@@ -136,7 +136,7 @@ pkt_burst_receive(struct fwd_stream *fs)
 		ol_flags = mb->ol_flags;
 		packet_type = mb->packet_type;
 		is_encapsulation = RTE_ETH_IS_TUNNEL_PKT(packet_type);
-
+		//打印源地址和目的地址
 		print_ether_addr("  src=", &eth_hdr->s_addr);
 		print_ether_addr(" - dst=", &eth_hdr->d_addr);
 		printf(" - type=0x%04x - length=%u - nb_segs=%d",

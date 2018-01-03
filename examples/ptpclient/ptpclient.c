@@ -36,7 +36,7 @@
  * which are used to synchronize the PHC clock. if the "-T 1" parameter is
  * passed to the application the Linux kernel clock is also synchronized.
  */
-
+//本例为时间同步协议PTP的DPDK实现
 #include <stdint.h>
 #include <inttypes.h>
 #include <rte_eal.h>

@@ -94,7 +94,8 @@ cmdline_stdin_new(cmdline_parse_ctx_t *ctx, const char *prompt)
 {
 	struct cmdline *cl;
 	struct termios oldterm, term;
-
+	//tcgetattr是一个函数，用来获取终端参数，成功返回零；失败返回非零，发生失败接口将设置errno错误标识。
+	//0 输入 1 输出 2 错误输出
 	tcgetattr(0, &oldterm);
 	memcpy(&term, &oldterm, sizeof(term));
 	term.c_lflag &= ~(ICANON | ECHO | ISIG);

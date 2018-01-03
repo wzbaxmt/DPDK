@@ -145,9 +145,9 @@ port_init(uint8_t port, struct rte_mempool *mbuf_pool)
 			addr.addr_bytes[2], addr.addr_bytes[3],
 			addr.addr_bytes[4], addr.addr_bytes[5]);
 
-	rte_eth_promiscuous_enable(port);
-	rte_eth_add_rx_callback(port, 0, add_timestamps, NULL);
-	rte_eth_add_tx_callback(port, 0, calc_latency, NULL);
+	rte_eth_promiscuous_enable(port);//启用混杂模式
+	rte_eth_add_rx_callback(port, 0, add_timestamps, NULL);//接受报文回调函数
+	rte_eth_add_tx_callback(port, 0, calc_latency, NULL);//发送报文回调函数
 
 	return 0;
 }

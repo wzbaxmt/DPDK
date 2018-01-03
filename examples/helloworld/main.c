@@ -59,11 +59,11 @@ main(int argc, char **argv)
 {
 	int ret;
 	unsigned lcore_id;
-
+	//初始化eal 主要是pci网卡、内存、cpu核的信息获取与初始化
 	ret = rte_eal_init(argc, argv);
 	if (ret < 0)
 		rte_panic("Cannot init EAL\n");
-
+	//每个核创建执行一个线程
 	/* call lcore_hello() on every slave lcore */
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
 		rte_eal_remote_launch(lcore_hello, NULL, lcore_id);
@@ -71,7 +71,7 @@ main(int argc, char **argv)
 
 	/* call it on master lcore too */
 	lcore_hello(NULL);
-
+	//等待所有线程执行结束
 	rte_eal_mp_wait_lcore();
 	return 0;
 }

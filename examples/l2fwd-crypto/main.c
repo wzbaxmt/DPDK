@@ -154,7 +154,7 @@ struct l2fwd_crypto_options {
 	unsigned refresh_period;
 	unsigned single_lcore:1;
 
-	enum cdev_type type;
+	enum cdev_type type;     
 	unsigned sessionless:1;
 
 	enum l2fwd_crypto_xform_chain xform_chain;

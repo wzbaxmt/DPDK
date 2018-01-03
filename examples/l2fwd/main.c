@@ -140,6 +140,64 @@ struct l2fwd_port_statistics port_statistics[RTE_MAX_ETHPORTS];
 /* A tsc-based timer responsible for triggering statistics printout */
 static uint64_t timer_period = 10; /* default period is 10 seconds */
 
+static struct {
+	uint64_t total_cycles;
+	uint64_t total_pkts;
+} latency_numbers;
+//data 要打印的数据部分指针
+//data_len + padding_len 要打印的长度
+//pt_mark 注释的指针
+static void printkHex(char *data, int data_len, int padding_len, char* pt_mark)
+{	
+	int i = 0;
+	printf("[%s]length=%d:%d;Data Content:\n", pt_mark, data_len, padding_len);
+	for (i = 0; i < (data_len+padding_len); i ++) 
+	{
+		if(0 == (i%16) && i != 0)
+			printf("[%d]\n",i/16);
+		printf("%02x ", data[i] & 0xFF);
+	}
+	printf("\n");
+}
+
+static uint16_t
+add_timestamps(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
+		struct rte_mbuf **pkts, uint16_t nb_pkts,
+		uint16_t max_pkts __rte_unused, void *_ __rte_unused)
+{
+	printf("add_timestamps\n");
+	/*
+	unsigned i;
+	uint64_t now = rte_rdtsc();
+
+	for (i = 0; i < nb_pkts; i++)
+		pkts[i]->udata64 = now;*/
+	return nb_pkts;
+}
+
+static uint16_t
+calc_latency(uint8_t port __rte_unused, uint16_t qidx __rte_unused,
+		struct rte_mbuf **pkts, uint16_t nb_pkts, void *_ __rte_unused)
+{
+	printf("calc_latency\n");
+	/*
+	uint64_t cycles = 0;
+	uint64_t now = rte_rdtsc();
+	unsigned i;
+
+	for (i = 0; i < nb_pkts; i++)
+		cycles += now - pkts[i]->udata64;
+	latency_numbers.total_cycles += cycles;
+	latency_numbers.total_pkts += nb_pkts;
+
+	if (latency_numbers.total_pkts > (100 * 1000 * 1000ULL)) {
+		printf("Latency = %"PRIu64" cycles\n",
+		latency_numbers.total_cycles / latency_numbers.total_pkts);
+		latency_numbers.total_cycles = latency_numbers.total_pkts = 0;
+	}*/
+	return nb_pkts;
+}
+
 /* Print out statistics on packets dropped */
 static void
 print_stats(void)
@@ -185,7 +243,7 @@ print_stats(void)
 		   total_packets_dropped);
 	printf("\n====================================================\n");
 }
-
+//mac地址学习
 static void
 l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 {
@@ -301,7 +359,8 @@ l2fwd_main_loop(void)
 		/*
 		 * Read packet from RX queues
 		 */
-		for (i = 0; i < qconf->n_rx_port; i++) {
+		for (i = 0; i < qconf->n_rx_port; i++) 
+		{
 
 			portid = qconf->rx_port_list[i];
 			nb_rx = rte_eth_rx_burst((uint8_t) portid, 0,
@@ -309,8 +368,17 @@ l2fwd_main_loop(void)
 
 			port_statistics[portid].rx += nb_rx;
 
-			for (j = 0; j < nb_rx; j++) {
+			for (j = 0; j < nb_rx; j++) 
+			{
 				m = pkts_burst[j];
+				{
+				struct ipv4_hdr *iphdr;
+				uint32_t dest_addr;
+				printf("Read %d packet from RX queues\n",nb_rx);
+				printf("buf_addr = %p, data_off = %d, pkt_len = %d, data_len = %d, buf_len = %d\n"
+						,m->buf_addr,m->data_off,m->pkt_len,m->data_len,m->buf_len);
+				printkHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
+				}
 				rte_prefetch0(rte_pktmbuf_mtod(m, void *));
 				l2fwd_simple_forward(m, portid);
 			}
@@ -413,7 +481,7 @@ static const struct option lgopts[] = {
 	{ CMD_LINE_OPT_NO_MAC_UPDATING, no_argument, &mac_updating, 0},
 	{NULL, 0, 0, 0}
 };
-
+/*处理l2fwd main 的入参 */
 /* Parse the argument given in the command line of the application */
 static int
 l2fwd_parse_args(int argc, char **argv)
@@ -536,7 +604,9 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
 		}
 	}
 }
-
+//信号处理函数，收到信号后将force_quit置为1
+//SIGINT ctrl+C产生
+//SIGTERM kill命令产生
 static void
 signal_handler(int signum)
 {
@@ -567,8 +637,8 @@ main(int argc, char **argv)
 	argv += ret;
 
 	force_quit = false;
-	signal(SIGINT, signal_handler);
-	signal(SIGTERM, signal_handler);
+	signal(SIGINT, signal_handler);//设置某一信号的对应动作,CTRL+C或者DELETE
+	signal(SIGTERM, signal_handler);//设置某一信号的对应动作,请求中止进程，kill命令缺省发送
 
 	/* parse application arguments (after the EAL ones) */
 	ret = l2fwd_parse_args(argc, argv);
@@ -580,13 +650,13 @@ main(int argc, char **argv)
 	/* convert to number of cycles */
 	timer_period *= rte_get_timer_hz();
 
-	/* create the mbuf pool */
+	/* create the mbuf pool 创建内存池*/
 	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", NB_MBUF,
 		MEMPOOL_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
 		rte_socket_id());
 	if (l2fwd_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
-
+	//rte_eth_dev_count()函数返回端口总数
 	nb_ports = rte_eth_dev_count();
 	if (nb_ports == 0)
 		rte_exit(EXIT_FAILURE, "No Ethernet ports - bye\n");
@@ -598,23 +668,30 @@ main(int argc, char **argv)
 
 	/*
 	 * Each logical core is assigned a dedicated TX queue on each port.
+	 * 设置每个端口的目的端口
 	 */
-	for (portid = 0; portid < nb_ports; portid++) {
-		/* skip ports that are not enabled */
+	for (portid = 0; portid < nb_ports; portid++)
+	{
+		/* skip ports that are not enabled //跳过未分配或者不可用端口*/
 		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
 			continue;
 
-		if (nb_ports_in_mask % 2) {
+		if (nb_ports_in_mask % 2)//1 3 5 7 .. 
+		{
 			l2fwd_dst_ports[portid] = last_port;
 			l2fwd_dst_ports[last_port] = portid;
+			//rte_eth_add_rx_callback(portid, 0, add_timestamps, NULL);//接受报文回调函数
+			//rte_eth_add_tx_callback(last_port, 0, calc_latency, NULL);//发送报文回调函数
+			//printf("rte_eth_add_tx_callback......................\n");
 		}
-		else
+		else//0 2 4 6 ...
 			last_port = portid;
 
 		nb_ports_in_mask++;
 
 		rte_eth_dev_info_get(portid, &dev_info);
 	}
+	//奇数个端口，则不转发
 	if (nb_ports_in_mask % 2) {
 		printf("Notice: odd number of ports in portmask.\n");
 		l2fwd_dst_ports[last_port] = last_port;
@@ -622,17 +699,17 @@ main(int argc, char **argv)
 
 	rx_lcore_id = 0;
 	qconf = NULL;
-
+    /* 每个core负责收l2fwd_rx_queue_per_lcore个端口, 每个端口(其实应该是QUEUE,因为这里一个port只有一个QUEUE)只能由一个lcore进行收包 */  
 	/* Initialize the port/queue configuration of each logical core */
-	for (portid = 0; portid < nb_ports; portid++) {
+	for (portid = 0; portid < nb_ports; portid++) 
+	{
 		/* skip ports that are not enabled */
 		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
 			continue;
 
 		/* get the lcore_id for this port */
-		while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||
-		       lcore_queue_conf[rx_lcore_id].n_rx_port ==
-		       l2fwd_rx_queue_per_lcore) {
+		while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||lcore_queue_conf[rx_lcore_id].n_rx_port == l2fwd_rx_queue_per_lcore) 
+		{
 			rx_lcore_id++;
 			if (rx_lcore_id >= RTE_MAX_LCORE)
 				rte_exit(EXIT_FAILURE, "Not enough cores\n");
@@ -648,7 +725,7 @@ main(int argc, char **argv)
 	}
 
 	nb_ports_available = nb_ports;
-
+	/* 每个port收发包队列的初始化 */  
 	/* Initialise each port */
 	for (portid = 0; portid < nb_ports; portid++) {
 		/* skip ports that are not enabled */
@@ -671,7 +748,7 @@ main(int argc, char **argv)
 			rte_exit(EXIT_FAILURE,
 				 "Cannot adjust number of descriptors: err=%d, port=%u\n",
 				 ret, (unsigned) portid);
-
+		//获取mac地址和端口号
 		rte_eth_macaddr_get(portid,&l2fwd_ports_eth_addr[portid]);
 
 		/* init one RX queue */
@@ -731,6 +808,8 @@ main(int argc, char **argv)
 
 		/* initialize port stats */
 		memset(&port_statistics, 0, sizeof(port_statistics));
+		//rte_eth_add_rx_callback(portid, 0, add_timestamps, NULL);//接受报文回调函数
+		rte_eth_add_tx_callback(portid, 0, calc_latency, NULL);//发送报文回调函数
 	}
 
 	if (!nb_ports_available) {
@@ -741,7 +820,7 @@ main(int argc, char **argv)
 	check_all_ports_link_status(nb_ports, l2fwd_enabled_port_mask);
 
 	ret = 0;
-	/* launch per-lcore init on every lcore */
+	/* launch per-lcore init on every lcore *//* 启动l2fwd线程 */ 
 	rte_eal_mp_remote_launch(l2fwd_launch_one_lcore, NULL, CALL_MASTER);
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0) {
