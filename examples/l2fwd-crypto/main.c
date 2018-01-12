@@ -425,7 +425,7 @@ l2fwd_simple_crypto_enqueue(struct rte_mbuf *m, struct rte_crypto_op *op, struct
 
 	eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
 
-	if (eth_hdr->ether_type != rte_cpu_to_be_16(ETHER_TYPE_IPv4))
+	if (eth_hdr->ether_type != rte_cpu_to_be_16(ETHER_TYPE_IPv4))//只转发IPV4报文
 		return -1;
 
 	ipdata_offset = sizeof(struct ether_hdr);/* 二层头长度 */
