@@ -1626,6 +1626,25 @@ static inline char *rte_pktmbuf_append(struct rte_mbuf *m, uint16_t len)
 	return (char*) tail;
 }
 
+// add delete the padding
+static inline char *rte_pktmbuf_delete(struct rte_mbuf *m, uint16_t len)
+{
+	void *tail;
+	struct rte_mbuf *m_last;
+
+	__rte_mbuf_sanity_check(m, 1);//格式检测
+
+	m_last = rte_pktmbuf_lastseg(m);//找到最后一个分片
+	if (unlikely(len > rte_pktmbuf_tailroom(m_last)))
+		return NULL;
+
+	tail = (char *)m_last->buf_addr + m_last->data_off + m_last->data_len;//原数据的尾指针
+	m_last->data_len = (uint16_t)(m_last->data_len - len);
+	m->pkt_len  = (m->pkt_len - len);
+	return (char*) tail;
+}
+
+
 /**
  * Remove len bytes at the beginning of an mbuf.
  *

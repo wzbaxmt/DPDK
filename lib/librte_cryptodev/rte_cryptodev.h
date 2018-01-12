@@ -871,6 +871,7 @@ rte_cryptodev_dequeue_burst(uint8_t dev_id, uint16_t qp_id,
  * crypto devices queue is full or if invalid parameters are specified in
  * a *rte_crypto_op*.
  */
+ //调用加密设备的函数指针接受加密的报文
 static inline uint16_t
 rte_cryptodev_enqueue_burst(uint8_t dev_id, uint16_t qp_id,
 		struct rte_crypto_op **ops, uint16_t nb_ops)

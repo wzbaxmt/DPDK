@@ -530,7 +530,8 @@ eal_parse_args(int argc, char **argv)
 	optind = 1;
 
 	while ((opt = getopt_long(argc, argvopt, eal_short_options,
-				  eal_long_options, &option_index)) != EOF) {
+				  eal_long_options, &option_index)) != EOF) 
+	{
 
 		/* getopt is not happy, stop right now */
 		if (opt == '?') {

@@ -141,7 +141,7 @@ TAILQ_HEAD_INITIALIZER(devopt_list);
 static int master_lcore_parsed;
 static int mem_parsed;
 static int core_parsed;
-
+//添加虚拟设备
 static int
 eal_option_device_add(enum rte_devtype type, const char *optarg)
 {
@@ -1125,7 +1125,7 @@ eal_parse_common_option(int opt, const char *optarg,
 			return -1;
 		}
 		break;
-
+	//添加虚拟加密设备
 	case OPT_VDEV_NUM:
 		if (eal_option_device_add(RTE_DEVTYPE_VIRTUAL,
 				optarg) < 0) {

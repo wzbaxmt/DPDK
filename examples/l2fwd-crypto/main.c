@@ -159,7 +159,7 @@ struct l2fwd_crypto_options {
 
 	enum l2fwd_crypto_xform_chain xform_chain;
 
-	struct rte_crypto_sym_xform cipher_xform;
+	struct rte_crypto_sym_xform cipher_xform;//加解密配置
 	unsigned ckey_param;
 	int ckey_random_size;
 
@@ -219,6 +219,8 @@ struct l2fwd_crypto_params {
 	enum rte_crypto_cipher_algorithm cipher_algo;
 	enum rte_crypto_auth_algorithm auth_algo;
 	enum rte_crypto_aead_algorithm aead_algo;
+	//add enc or dec
+	enum rte_crypto_cipher_operation cipher_op;//加密or解密
 };
 
 /** lcore configuration */
@@ -360,7 +362,7 @@ print_stats(void)
 		   total_packets_errors);
 	printf("\n====================================================\n");
 }
-
+//将待加密的报文数据发送给加密设备
 static int
 l2fwd_crypto_send_burst(struct lcore_queue_conf *qconf, unsigned n,
 		struct l2fwd_crypto_params *cparams)
@@ -401,7 +403,8 @@ l2fwd_crypto_enqueue(struct rte_crypto_op *op,
 	len++;
 
 	/* enough ops to be sent */
-	if (len == MAX_PKT_BURST) {
+	if (len == MAX_PKT_BURST) 
+	{
 		l2fwd_crypto_send_burst(qconf, MAX_PKT_BURST, cparams);
 		len = 0;
 	}
@@ -409,72 +412,74 @@ l2fwd_crypto_enqueue(struct rte_crypto_op *op,
 	qconf->op_buf[cparams->dev_id].len = len;
 	return 0;
 }
-
+//将从网口获取的数据包放入加密设备队列
 static int
-l2fwd_simple_crypto_enqueue(struct rte_mbuf *m,
-		struct rte_crypto_op *op,
-		struct l2fwd_crypto_params *cparams)
+l2fwd_simple_crypto_enqueue(struct rte_mbuf *m, struct rte_crypto_op *op, struct l2fwd_crypto_params *cparams)
 {
-	struct ether_hdr *eth_hdr;
-	struct ipv4_hdr *ip_hdr;
+	struct ether_hdr *eth_hdr;/* 二层头 */
+	struct ipv4_hdr *ip_hdr; /* IPv4头部 */
 
 	uint32_t ipdata_offset, data_len;
-	uint32_t pad_len = 0;
-	char *padding;
+	uint32_t pad_len = 0;/* 填充数据长度 */
+	char *padding;		/* 填充的数据内容 */
 
 	eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
 
 	if (eth_hdr->ether_type != rte_cpu_to_be_16(ETHER_TYPE_IPv4))
 		return -1;
 
-	ipdata_offset = sizeof(struct ether_hdr);
+	ipdata_offset = sizeof(struct ether_hdr);/* 二层头长度 */
 
 	ip_hdr = (struct ipv4_hdr *)(rte_pktmbuf_mtod(m, char *) +
 			ipdata_offset);
 
 	ipdata_offset += (ip_hdr->version_ihl & IPV4_HDR_IHL_MASK)
-			* IPV4_IHL_MULTIPLIER;
+			* IPV4_IHL_MULTIPLIER;/* ip头部长度 */
 
 
-	/* Zero pad data to be crypto'd so it is block aligned */
+	/* Zero pad data to be crypto'd so it is block aligned 
+			数据长度 = 包m的长度-二层头的长度-ip头部长度*/
 	data_len  = rte_pktmbuf_data_len(m) - ipdata_offset;
 
 	if (cparams->do_hash && cparams->hash_verify)
-		data_len -= cparams->digest_length;
-
-	if (cparams->do_cipher) {
+		data_len -= cparams->digest_length;/* 如果有做认证，则减去hash摘要长度 */
+	//加密，增加pad_len字节0
+	if (cparams->do_cipher)
+	{
 		/*
 		 * Following algorithms are block cipher algorithms,
-		 * and might need padding
+		 * and might need padding 分组加密算法，可能需要填充数据
 		 */
-		switch (cparams->cipher_algo) {
+		switch (cparams->cipher_algo) 
+		{
 		case RTE_CRYPTO_CIPHER_AES_CBC:
 		case RTE_CRYPTO_CIPHER_AES_ECB:
 		case RTE_CRYPTO_CIPHER_DES_CBC:
 		case RTE_CRYPTO_CIPHER_3DES_CBC:
 		case RTE_CRYPTO_CIPHER_3DES_ECB:
-			if (data_len % cparams->block_size)
+			if (data_len % cparams->block_size)/* 如果数据长度模分组大小不为0 */
 				pad_len = cparams->block_size -
-					(data_len % cparams->block_size);
+					(data_len % cparams->block_size);/* 则计算填充数据长度 */
 			break;
 		default:
 			pad_len = 0;
 		}
-
-		if (pad_len) {
-			padding = rte_pktmbuf_append(m, pad_len);
+		/* 如果需要填充 */
+		if (pad_len) 
+		{
+			padding = rte_pktmbuf_append(m, pad_len);/* 将填充数据附加到m，并返回填充的数据首地址 */
 			if (unlikely(!padding))
 				return -1;
 
 			data_len += pad_len;
-			memset(padding, 0, pad_len);
+			memset(padding, 0, pad_len);/* 将填充数据初始化为0 */
 		}
 	}
-
 	/* Set crypto operation data parameters */
 	rte_crypto_op_attach_sym_session(op, cparams->session);
-
-	if (cparams->do_hash) {
+	/* 填充rte_crypto_op结构体的认证参数 */
+	if (cparams->do_hash) 
+	{
 		if (cparams->auth_iv.length) {
 			uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op,
 						uint8_t *,
@@ -488,7 +493,7 @@ l2fwd_simple_crypto_enqueue(struct rte_mbuf *m,
 					cparams->auth_iv.length);
 		}
 		if (!cparams->hash_verify) {
-			/* Append space for digest to end of packet */
+			/* Append space for digest to end of packet 将认证数据附加到数据包后面*/
 			op->sym->auth.digest.data = (uint8_t *)rte_pktmbuf_append(m,
 				cparams->digest_length);
 		} else {
@@ -510,8 +515,9 @@ l2fwd_simple_crypto_enqueue(struct rte_mbuf *m,
 			op->sym->auth.data.length = data_len;
 		}
 	}
-
-	if (cparams->do_cipher) {
+	/* 填充rte_crypto_op结构体的加密参数 */
+	if (cparams->do_cipher) 
+	{
 		uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 							IV_OFFSET);
 		/* Copy IV at the end of the crypto operation */
@@ -524,13 +530,16 @@ l2fwd_simple_crypto_enqueue(struct rte_mbuf *m,
 				cparams->cipher_algo == RTE_CRYPTO_CIPHER_ZUC_EEA3) {
 			op->sym->cipher.data.offset = ipdata_offset << 3;
 			op->sym->cipher.data.length = data_len << 3;
-		} else {
+		} 
+		else 
+		{
 			op->sym->cipher.data.offset = ipdata_offset;
 			op->sym->cipher.data.length = data_len;
 		}
 	}
 
-	if (cparams->do_aead) {
+	if (cparams->do_aead) 
+	{
 		uint8_t *iv_ptr = rte_crypto_op_ctod_offset(op, uint8_t *,
 							IV_OFFSET);
 		/* Copy IV at the end of the crypto operation */
@@ -556,8 +565,8 @@ l2fwd_simple_crypto_enqueue(struct rte_mbuf *m,
 			op->sym->aead.aad.phys_addr = cparams->aad.phys_addr;
 		}
 	}
-
-	op->sym->m_src = m;
+	/* m_src表示源数据，即没有加密之前的数据 */
+	op->sym->m_src = m; //加密前的数据
 
 	return l2fwd_crypto_enqueue(op, cparams);
 }
@@ -698,7 +707,7 @@ initialize_crypto_session(struct l2fwd_crypto_options *options, uint8_t cdev_id)
 
 static void
 l2fwd_crypto_options_print(struct l2fwd_crypto_options *options);
-
+//每一个逻辑核处理一个网口设备和一个crypto device
 /* main processing loop */
 static void
 l2fwd_main_loop(struct l2fwd_crypto_options *options)
@@ -706,7 +715,7 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 	struct rte_mbuf *m, *pkts_burst[MAX_PKT_BURST];
 	struct rte_crypto_op *ops_burst[MAX_PKT_BURST];
 
-	unsigned lcore_id = rte_lcore_id();
+	unsigned lcore_id = rte_lcore_id();//当前内核编号
 	uint64_t prev_tsc = 0, diff_tsc, cur_tsc, timer_tsc = 0;
 	unsigned i, j, portid, nb_rx, len;
 	struct lcore_queue_conf *qconf = &lcore_queue_conf[lcore_id];
@@ -716,26 +725,29 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 	struct l2fwd_crypto_params port_cparams[qconf->nb_crypto_devs];
 	struct rte_cryptodev_sym_session *session;
 
-	if (qconf->nb_rx_ports == 0) {
+	if (qconf->nb_rx_ports == 0) 
+	{
 		RTE_LOG(INFO, L2FWD, "lcore %u has nothing to do\n", lcore_id);
 		return;
 	}
 
 	RTE_LOG(INFO, L2FWD, "entering main loop on lcore %u\n", lcore_id);
 
-	for (i = 0; i < qconf->nb_rx_ports; i++) {
-
+	for (i = 0; i < qconf->nb_rx_ports; i++) 
+	{
 		portid = qconf->rx_port_list[i];
 		RTE_LOG(INFO, L2FWD, " -- lcoreid=%u portid=%u\n", lcore_id,
 			portid);
 	}
 
-	for (i = 0; i < qconf->nb_crypto_devs; i++) {
+	for (i = 0; i < qconf->nb_crypto_devs; i++) 
+	{
 		port_cparams[i].do_cipher = 0;
 		port_cparams[i].do_hash = 0;
 		port_cparams[i].do_aead = 0;
 
-		switch (options->xform_chain) {
+		switch (options->xform_chain) 
+		{
 		case L2FWD_CRYPTO_AEAD:
 			port_cparams[i].do_aead = 1;
 			break;
@@ -757,7 +769,8 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 
 		port_cparams[i].block_size = options->block_size;
 
-		if (port_cparams[i].do_hash) {
+		if (port_cparams[i].do_hash) 
+		{
 			port_cparams[i].auth_iv.data = options->auth_iv.data;
 			port_cparams[i].auth_iv.length = options->auth_iv.length;
 			if (!options->auth_iv_param)
@@ -772,7 +785,8 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 			port_cparams[i].digest_length =
 					options->auth_xform.auth.digest_length;
 			/* Set IV parameters */
-			if (options->auth_iv.length) {
+			if (options->auth_iv.length) 
+			{
 				options->auth_xform.auth.iv.offset =
 					IV_OFFSET + options->cipher_iv.length;
 				options->auth_xform.auth.iv.length =
@@ -810,7 +824,8 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 			options->aead_xform.aead.iv.length = options->aead_iv.length;
 		}
 
-		if (port_cparams[i].do_cipher) {
+		if (port_cparams[i].do_cipher) 
+		{
 			port_cparams[i].cipher_iv.data = options->cipher_iv.data;
 			port_cparams[i].cipher_iv.length = options->cipher_iv.length;
 			if (!options->cipher_iv_param)
@@ -818,6 +833,8 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 						port_cparams[i].cipher_iv.length);
 
 			port_cparams[i].cipher_algo = options->cipher_xform.cipher.algo;
+			// add enc or dec
+			port_cparams[i].cipher_op = options->cipher_xform.cipher.op;
 			/* Set IV parameters */
 			options->cipher_xform.cipher.iv.offset = IV_OFFSET;
 			options->cipher_xform.cipher.iv.length =
@@ -843,29 +860,31 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 	 * so user can see the crypto information.
 	 */
 	prev_tsc = rte_rdtsc();
-	while (1) {
-
+	while (1) 
+	{
 		cur_tsc = rte_rdtsc();
 
 		/*
 		 * Crypto device/TX burst queue drain
 		 */
 		diff_tsc = cur_tsc - prev_tsc;
-		if (unlikely(diff_tsc > drain_tsc)) {
+		if (unlikely(diff_tsc > drain_tsc))
+		{
 			/* Enqueue all crypto ops remaining in buffers */
-			for (i = 0; i < qconf->nb_crypto_devs; i++) {
+			for (i = 0; i < qconf->nb_crypto_devs; i++) 
+			{
 				cparams = &port_cparams[i];
 				len = qconf->op_buf[cparams->dev_id].len;
 				l2fwd_crypto_send_burst(qconf, len, cparams);
 				qconf->op_buf[cparams->dev_id].len = 0;
 			}
 			/* Transmit all packets remaining in buffers */
-			for (portid = 0; portid < RTE_MAX_ETHPORTS; portid++) {
+			for (portid = 0; portid < RTE_MAX_ETHPORTS; portid++) 
+			{
 				if (qconf->pkt_buf[portid].len == 0)
 					continue;
 				l2fwd_send_burst(&lcore_queue_conf[lcore_id],
-						 qconf->pkt_buf[portid].len,
-						 (uint8_t) portid);
+						 qconf->pkt_buf[portid].len,(uint8_t) portid);
 				qconf->pkt_buf[portid].len = 0;
 			}
 
@@ -894,55 +913,74 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 		/*
 		 * Read packet from RX queues
 		 */
-		for (i = 0; i < qconf->nb_rx_ports; i++) {
+		for (i = 0; i < qconf->nb_rx_ports; i++) 
+		{
 			portid = qconf->rx_port_list[i];
 
 			cparams = &port_cparams[i];
-
+			/* 接收数据包，存储在pkts_burst数组中，一次可能接收多个数据rte_mbuf，
+            返回值nb_rx为接收的数量 */
 			nb_rx = rte_eth_rx_burst((uint8_t) portid, 0,
 						 pkts_burst, MAX_PKT_BURST);
 
 			port_statistics[portid].rx += nb_rx;
 
-			if (nb_rx) {
+			if (nb_rx) 
+			{
 				/*
 				 * If we can't allocate a crypto_ops, then drop
 				 * the rest of the burst and dequeue and
 				 * process the packets to free offload structs
+				 * 对于n个数据包，创建n个crypto operations
 				 */
 				if (rte_crypto_op_bulk_alloc(
 						l2fwd_crypto_op_pool,
 						RTE_CRYPTO_OP_TYPE_SYMMETRIC,
 						ops_burst, nb_rx) !=
-								nb_rx) {
+								nb_rx) 
+				{
 					for (j = 0; j < nb_rx; j++)
 						rte_pktmbuf_free(pkts_burst[j]);
 
 					nb_rx = 0;
 				}
 
-				/* Enqueue packets from Crypto device*/
-				for (j = 0; j < nb_rx; j++) {
+				/* Enqueue packets from Crypto device 向加密设备中写入报文*/
+				for (j = 0; j < nb_rx; j++) 
+				{
 					m = pkts_burst[j];
-
-					l2fwd_simple_crypto_enqueue(m,
-							ops_burst[j], cparams);
+					/* 将数据包放入加密设备队列 */
+					l2fwd_simple_crypto_enqueue(m,ops_burst[j], cparams);
 				}
 			}
 
-			/* Dequeue packets from Crypto device */
-			do {
-				nb_rx = rte_cryptodev_dequeue_burst(
-						cparams->dev_id, cparams->qp_id,
-						ops_burst, MAX_PKT_BURST);
+			/* Dequeue packets from Crypto device 从加密设备中取出报文*/
+			do 
+			{
+				nb_rx = rte_cryptodev_dequeue_burst(cparams->dev_id, cparams->qp_id, ops_burst, MAX_PKT_BURST);
 
-				crypto_statistics[cparams->dev_id].dequeued +=
-						nb_rx;
+				crypto_statistics[cparams->dev_id].dequeued += nb_rx;
 
 				/* Forward crypto'd packets */
-				for (j = 0; j < nb_rx; j++) {
+				for (j = 0; j < nb_rx; j++) 
+				{
 					m = ops_burst[j]->sym->m_src;
+					//wyq
+					{
+						struct ipv4_hdr *ip_hdr; /* IPv4头部 */
+						uint32_t ipdata_offset, data_len;
+						uint32_t pad_len = 0;/* 填充数据长度 */
+						
+						ipdata_offset = sizeof(struct ether_hdr);/* 二层头长度 */
+						ip_hdr = (struct ipv4_hdr *)(rte_pktmbuf_mtod(m, char *) + ipdata_offset);
+						data_len  = rte_pktmbuf_data_len(m) - ipdata_offset;
+						
+						if (!(data_len % cparams->block_size))/* 如果数据长度模分组大小是block_size整数倍 */
+							pad_len = data_len - ip_hdr->total_length;/* 填充数据长度= 填充后的数据 - ip报文数据*/
 
+						rte_pktmbuf_delete(m, pad_len);
+					}
+					
 					rte_crypto_op_free(ops_burst[j]);
 					l2fwd_simple_forward(m, portid,
 							options);
@@ -1200,7 +1238,7 @@ parse_cryptodev_mask(struct l2fwd_crypto_options *options,
 	return 0;
 }
 
-/** Parse long options */
+/** Parse long options 将结果填入option中*/
 static int
 l2fwd_crypto_parse_args_long_options(struct l2fwd_crypto_options *options,
 		struct option *lgopts, int option_index)
@@ -1664,13 +1702,15 @@ l2fwd_crypto_parse_args(struct l2fwd_crypto_options *options,
 
 			{ NULL, 0, 0, 0 }
 	};
-
+	//将默认配置写入option
 	l2fwd_crypto_default_options(options);
-
+	//解析执行命令行
 	while ((opt = getopt_long(argc, argvopt, "p:q:sT:", lgopts,
-			&option_index)) != EOF) {
-		switch (opt) {
-		/* long options */
+			&option_index)) != EOF) 
+	{
+		switch (opt) 
+		{
+		/* long options 加解密、验证等命令的解析，结果在option中*/
 		case 0:
 			retval = l2fwd_crypto_parse_args_long_options(options,
 					lgopts, option_index);
@@ -1976,7 +2016,13 @@ check_iv_param(const struct rte_crypto_param_range *iv_range_size,
 
 	return 0;
 }
-
+//初始化加密设备
+/* @brief 初始化并激活Crypto device 
+* @param	options 		命令行参数（加密算法、认证算法、加密密钥等）
+* @param	nb_ports		已经激活的网口数量
+* @param	enabled_cdevs	存储启动的crypto_dev数组
+* @return	enabled_cdev_count	激活的crypto_dev数量
+**/
 static int
 initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 		uint8_t *enabled_cdevs)
@@ -2018,7 +2064,7 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 
 		if (check_cryptodev_mask(options, (uint8_t)cdev_id))
 			continue;
-
+		/* 获取Crypto device的信息 */
 		rte_cryptodev_info_get(cdev_id, &dev_info);
 
 		if (session_pool_socket[socket_id] == NULL) {
@@ -2156,7 +2202,7 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 						cap->sym.aead.digest_size.min;
 		}
 
-		/* Set cipher parameters */
+		/* Set cipher parameters 设置加密参数*/
 		if (options->xform_chain == L2FWD_CRYPTO_CIPHER_HASH ||
 				options->xform_chain == L2FWD_CRYPTO_HASH_CIPHER ||
 				options->xform_chain == L2FWD_CRYPTO_CIPHER_ONLY) {
@@ -2214,7 +2260,7 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 
 		}
 
-		/* Set auth parameters */
+		/* Set auth parameters 设置认证参数*/
 		if (options->xform_chain == L2FWD_CRYPTO_CIPHER_HASH ||
 				options->xform_chain == L2FWD_CRYPTO_HASH_CIPHER ||
 				options->xform_chain == L2FWD_CRYPTO_HASH_ONLY) {
@@ -2316,12 +2362,17 @@ initialize_cryptodevs(struct l2fwd_crypto_options *options, unsigned nb_ports,
 
 	return enabled_cdev_count;
 }
-
+/*
+* @brief 初始化并启动所有网口
+* @param 命令行参数结构体
+* @return 返回启动的网口数量
+**/
 static int
 initialize_ports(struct l2fwd_crypto_options *options)
 {
 	uint8_t last_portid, portid;
 	unsigned enabled_portcount = 0;
+	/* 获取网口数量 */
 	unsigned nb_ports = rte_eth_dev_count();
 
 	if (nb_ports == 0) {
@@ -2336,13 +2387,14 @@ initialize_ports(struct l2fwd_crypto_options *options)
 	for (last_portid = 0, portid = 0; portid < nb_ports; portid++) {
 		int retval;
 
-		/* Skip ports that are not enabled */
+		/* Skip ports that are not enabled 忽略未启用的物理端口*/
 		if ((options->portmask & (1 << portid)) == 0)
 			continue;
 
 		/* init port */
 		printf("Initializing port %u... ", (unsigned) portid);
 		fflush(stdout);
+		/* 根据port_conf参数配置一个网口的信息, 同时设1个发送队列和1个接收队列 */
 		retval = rte_eth_dev_configure(portid, 1, 1, &port_conf);
 		if (retval < 0) {
 			printf("Cannot configure device: err=%d, port=%u\n",
@@ -2358,7 +2410,7 @@ initialize_ports(struct l2fwd_crypto_options *options)
 			return -1;
 		}
 
-		/* init one RX queue */
+		/* 在每个物理网口上初始化一个接收队列 init one RX queue */
 		fflush(stdout);
 		retval = rte_eth_rx_queue_setup(portid, 0, nb_rxd,
 					     rte_eth_dev_socket_id(portid),
@@ -2369,7 +2421,7 @@ initialize_ports(struct l2fwd_crypto_options *options)
 			return -1;
 		}
 
-		/* init one TX queue on each port */
+		/* 在每个物理端口上初始化一个发送队列 init one TX queue on each port */
 		fflush(stdout);
 		retval = rte_eth_tx_queue_setup(portid, 0, nb_txd,
 				rte_eth_dev_socket_id(portid),
@@ -2388,9 +2440,9 @@ initialize_ports(struct l2fwd_crypto_options *options)
 					retval, (unsigned) portid);
 			return -1;
 		}
-
+		//设为混杂模式
 		rte_eth_promiscuous_enable(portid);
-
+		/* 获取物理网口的mac地址 */
 		rte_eth_macaddr_get(portid, &l2fwd_ports_eth_addr[portid]);
 
 		printf("Port %u, MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n\n",
@@ -2405,16 +2457,16 @@ initialize_ports(struct l2fwd_crypto_options *options)
 		/* initialize port stats */
 		memset(&port_statistics, 0, sizeof(port_statistics));
 
-		/* Setup port forwarding table */
+		/* Setup port forwarding table 如果是有偶数个物理端口，设为相邻两个物理端口对发*/
 		if (enabled_portcount % 2) {
 			l2fwd_dst_ports[portid] = last_portid;
 			l2fwd_dst_ports[last_portid] = portid;
-		} else {
+		} else {/* 将这个portid设为最后一个portid */
 			last_portid = portid;
 		}
 
 		l2fwd_enabled_port_mask |= (1 << portid);
-		enabled_portcount++;
+		enabled_portcount++;//更新已启用的物理端口的总数
 	}
 
 	if (enabled_portcount == 1) {
@@ -2423,7 +2475,7 @@ initialize_ports(struct l2fwd_crypto_options *options)
 		printf("odd number of ports in portmask- bye\n");
 		return -1;
 	}
-
+	//检查所有物理端口的连接状态
 	check_all_ports_link_status(nb_ports, l2fwd_enabled_port_mask);
 
 	return enabled_portcount;
@@ -2464,12 +2516,12 @@ reserve_key_memory(struct l2fwd_crypto_options *options)
 		rte_exit(EXIT_FAILURE, "Failed to allocate memory for AAD");
 	options->aad.phys_addr = rte_malloc_virt2phy(options->aad.data);
 }
-
+//主函数
 int
 main(int argc, char **argv)
 {
 	struct lcore_queue_conf *qconf;
-	struct l2fwd_crypto_options options;
+	struct l2fwd_crypto_options options;//加密选项配置
 
 	uint8_t nb_ports, nb_cryptodevs, portid, cdev_id;
 	unsigned lcore_id, rx_lcore_id;
@@ -2486,7 +2538,7 @@ main(int argc, char **argv)
 	/* reserve memory for Cipher/Auth key and IV */
 	reserve_key_memory(&options);
 
-	/* parse application arguments (after the EAL ones) */
+	/* parse application arguments (after the EAL ones) 处理入参，结果保存进配置*/
 	ret = l2fwd_crypto_parse_args(&options, argc, argv);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid L2FWD-CRYPTO arguments\n");
@@ -2494,21 +2546,21 @@ main(int argc, char **argv)
 	printf("MAC updating %s\n",
 			options.mac_updating ? "enabled" : "disabled");
 
-	/* create the mbuf pool */
+	/* create the mbuf pool 创建内存池*/
 	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", NB_MBUF, 512,
 			sizeof(struct rte_crypto_op),
 			RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
 	if (l2fwd_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
-	/* create crypto op pool */
+	/* create crypto op pool 创建加密内存池*/
 	l2fwd_crypto_op_pool = rte_crypto_op_pool_create("crypto_op_pool",
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC, NB_MBUF, 128, MAXIMUM_IV_LENGTH,
 			rte_socket_id());
 	if (l2fwd_crypto_op_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot create crypto op pool\n");
 
-	/* Enable Ethernet ports */
+	/* Enable Ethernet ports 初始化以太网端口*/
 	enabled_portcount = initialize_ports(&options);
 	if (enabled_portcount < 1)
 		rte_exit(EXIT_FAILURE, "Failed to initial Ethernet ports\n");
@@ -2516,28 +2568,31 @@ main(int argc, char **argv)
 	nb_ports = rte_eth_dev_count();
 	/* Initialize the port/queue configuration of each logical core */
 	for (rx_lcore_id = 0, qconf = NULL, portid = 0;
-			portid < nb_ports; portid++) {
-
-		/* skip ports that are not enabled */
+			portid < nb_ports; portid++) 
+	{
+		/* skip ports that are not enabled 未使能，跳过*/
 		if ((options.portmask & (1 << portid)) == 0)
 			continue;
 
-		if (options.single_lcore && qconf == NULL) {
-			while (rte_lcore_is_enabled(rx_lcore_id) == 0) {
+		if (options.single_lcore && qconf == NULL) 
+		{	//如果该内核使能，则内核计数器+1
+			while (rte_lcore_is_enabled(rx_lcore_id) == 0) 
+			{
 				rx_lcore_id++;
 				if (rx_lcore_id >= RTE_MAX_LCORE)
-					rte_exit(EXIT_FAILURE,
-							"Not enough cores\n");
+					rte_exit(EXIT_FAILURE,"Not enough cores\n");
 			}
-		} else if (!options.single_lcore) {
+		} 
+		else if (!options.single_lcore) 
+		{
 			/* get the lcore_id for this port */
 			while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||
 			       lcore_queue_conf[rx_lcore_id].nb_rx_ports ==
-			       options.nb_ports_per_lcore) {
+			       options.nb_ports_per_lcore) 
+			{
 				rx_lcore_id++;
 				if (rx_lcore_id >= RTE_MAX_LCORE)
-					rte_exit(EXIT_FAILURE,
-							"Not enough cores\n");
+					rte_exit(EXIT_FAILURE,"Not enough cores\n");
 			}
 		}
 
@@ -2567,23 +2622,29 @@ main(int argc, char **argv)
 	/* Initialize the port/cryptodev configuration of each logical core */
 	for (rx_lcore_id = 0, qconf = NULL, cdev_id = 0;
 			cdev_id < nb_cryptodevs && enabled_cdevcount;
-			cdev_id++) {
+			cdev_id++)
+	{
 		/* Crypto op not supported by crypto device */
 		if (!enabled_cdevs[cdev_id])
 			continue;
 
-		if (options.single_lcore && qconf == NULL) {
-			while (rte_lcore_is_enabled(rx_lcore_id) == 0) {
+		if (options.single_lcore && qconf == NULL)
+		{
+			while (rte_lcore_is_enabled(rx_lcore_id) == 0) 
+			{
 				rx_lcore_id++;
 				if (rx_lcore_id >= RTE_MAX_LCORE)
 					rte_exit(EXIT_FAILURE,
 							"Not enough cores\n");
 			}
-		} else if (!options.single_lcore) {
+		} 
+		else if (!options.single_lcore) 
+		{
 			/* get the lcore_id for this port */
 			while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||
 			       lcore_queue_conf[rx_lcore_id].nb_crypto_devs ==
-			       options.nb_ports_per_lcore) {
+			       options.nb_ports_per_lcore) 
+			{
 				rx_lcore_id++;
 				if (rx_lcore_id >= RTE_MAX_LCORE)
 					rte_exit(EXIT_FAILURE,
@@ -2607,7 +2668,8 @@ main(int argc, char **argv)
 	/* launch per-lcore init on every lcore */
 	rte_eal_mp_remote_launch(l2fwd_launch_one_lcore, (void *)&options,
 			CALL_MASTER);
-	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
+	RTE_LCORE_FOREACH_SLAVE(lcore_id) 
+	{
 		if (rte_eal_wait_lcore(lcore_id) < 0)
 			return -1;
 	}

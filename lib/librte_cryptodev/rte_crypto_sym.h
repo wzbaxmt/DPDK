@@ -133,7 +133,7 @@ rte_crypto_cipher_operation_strings[];
  *  use to create a session.
  */
 struct rte_crypto_cipher_xform {
-	enum rte_crypto_cipher_operation op;
+	enum rte_crypto_cipher_operation op;//加密or解密
 	/**< This parameter determines if the cipher operation is an encrypt or
 	 * a decrypt operation. For the RC4 algorithm and the F8/CTR modes,
 	 * only encrypt operations are valid.
@@ -456,7 +456,7 @@ struct rte_crypto_sym_xform {
 	union {
 		struct rte_crypto_auth_xform auth;
 		/**< Authentication / hash xform */
-		struct rte_crypto_cipher_xform cipher;
+		struct rte_crypto_cipher_xform cipher;//加解密配置
 		/**< Cipher xform */
 		struct rte_crypto_aead_xform aead;
 		/**< AEAD xform */
