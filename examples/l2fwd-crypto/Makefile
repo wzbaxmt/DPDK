@@ -42,7 +42,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP = l2fwd-crypto
 
 # all source are stored in SRCS-y
-SRCS-y := main.c
+SRCS-y := main.c socket.c
 
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)

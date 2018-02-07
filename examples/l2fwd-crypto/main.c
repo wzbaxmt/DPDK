@@ -75,6 +75,7 @@
 #include <rte_hexdump.h>
 
 #include "main.h"
+#include "socket.h"
 
 /* Print out statistics on packets dropped */
 static void
@@ -2313,7 +2314,7 @@ main(int argc, char **argv)
 {
 	struct lcore_queue_conf *qconf;
 	struct l2fwd_crypto_options options;//加密选项配置
-
+	hello();
 	uint8_t nb_ports, nb_cryptodevs, portid, cdev_id;
 	unsigned lcore_id, rx_lcore_id;
 	int ret, enabled_cdevcount, enabled_portcount;
