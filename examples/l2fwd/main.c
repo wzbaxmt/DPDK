@@ -68,6 +68,8 @@
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
 
+#include "func.h"
+
 static volatile bool force_quit;
 
 /* MAC updating enabled by default */
@@ -138,21 +140,6 @@ struct l2fwd_port_statistics port_statistics[RTE_MAX_ETHPORTS];
 /* A tsc-based timer responsible for triggering statistics printout */
 static uint64_t timer_period = 10; /* default period is 10 seconds */
 
-//data 要打印的数据部分指针
-//data_len + padding_len 要打印的长度
-//pt_mark 注释的指针
-static void printkHex(char *data, int data_len, int padding_len, char* pt_mark)
-{	
-	int i = 0;
-	printf("[%s]length=%d:%d;Data Content:\n", pt_mark, data_len, padding_len);
-	for (i = 0; i < (data_len+padding_len); i ++) 
-	{
-		if(0 == (i%16) && i != 0)
-			printf("[%d]\n",i/16);
-		printf("%02x ", data[i] & 0xFF);
-	}
-	printf("\n");
-}
 /* Print out statistics on packets dropped */
 static void
 print_stats(void)
