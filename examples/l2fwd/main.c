@@ -308,17 +308,10 @@ l2fwd_main_loop(void)
 						 pkts_burst, MAX_PKT_BURST);
 
 			port_statistics[portid].rx += nb_rx;
-
 			for (j = 0; j < nb_rx; j++) {
-				m = pkts_burst[j];
-				{
-				struct ipv4_hdr *iphdr;
-				uint32_t dest_addr;
 				printf("Read %d packet from RX queues\n",nb_rx);
-				printf("buf_addr = %p, data_off = %d, pkt_len = %d, data_len = %d, buf_len = %d\n"
-						,m->buf_addr,m->data_off,m->pkt_len,m->data_len,m->buf_len);
-				printkHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
-				}
+				m = pkts_burst[j];
+				pkt_filter(m);
 				rte_prefetch0(rte_pktmbuf_mtod(m, void *));
 				l2fwd_simple_forward(m, portid);
 			}
