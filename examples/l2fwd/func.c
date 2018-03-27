@@ -1,4 +1,10 @@
 #include <rte_mbuf.h>
+#include <rte_ip.h>
+#include <rte_tcp.h>
+#include <rte_udp.h>
+#include <arpa/inet.h> 
+
+
 /*
  * 为本地DPDK端代码
  * 主要为与业务无关的代码
@@ -12,6 +18,7 @@
 #define false	0	//不需要处理
 #define IP_PROTOCOL 0x0008 //实际应该是0800大小端未转换
 #define MAC_LEN		12
+#define L2_LEN		14
 #define IP_PROTO_ADDR	23
 #define aes_cbc 0x01
 #define sm4_ecb 0x06
@@ -19,37 +26,6 @@
 #define pass 0x00
 #define encrypt 0x01
 #define decrypt 0x02
-
-
-/* Standard well-defined IP protocols.  */
-enum {
-  IPPROTO_IP = 0,		/* Dummy protocol for TCP		*/
-  IPPROTO_ICMP = 1,		/* Internet Control Message Protocol	*/
-  IPPROTO_IGMP = 2,		/* Internet Group Management Protocol	*/
-  IPPROTO_IPIP = 4,		/* IPIP tunnels (older KA9Q tunnels use 94) */
-  IPPROTO_TCP = 6,		/* Transmission Control Protocol	*/
-  IPPROTO_EGP = 8,		/* Exterior Gateway Protocol		*/
-  IPPROTO_PUP = 12,		/* PUP protocol				*/
-  IPPROTO_UDP = 17,		/* User Datagram Protocol		*/
-  IPPROTO_IDP = 22,		/* XNS IDP protocol			*/
-  IPPROTO_DCCP = 33,		/* Datagram Congestion Control Protocol */
-  IPPROTO_RSVP = 46,		/* RSVP protocol			*/
-  IPPROTO_GRE = 47,		/* Cisco GRE tunnels (rfc 1701,1702)	*/
-
-  IPPROTO_IPV6	 = 41,		/* IPv6-in-IPv4 tunnelling		*/
-
-  IPPROTO_ESP = 50,            /* Encapsulation Security Payload protocol */
-  IPPROTO_AH = 51,             /* Authentication Header protocol       */
-  IPPROTO_BEETPH = 94,	       /* IP option pseudo header for BEET */
-  IPPROTO_PIM    = 103,		/* Protocol Independent Multicast	*/
-
-  IPPROTO_COMP   = 108,                /* Compression Header protocol */
-  IPPROTO_SCTP   = 132,		/* Stream Control Transport Protocol	*/
-  IPPROTO_UDPLITE = 136,	/* UDP-Lite (RFC 3828)			*/
-
-  IPPROTO_RAW	 = 255,		/* Raw IP packets			*/
-  IPPROTO_MAX
-};
 
 void printHex(char *data, int data_len, int padding_len, char *pt_mark)
 { 
@@ -149,20 +125,31 @@ int pkt_filter(struct rte_mbuf *m)
 	printf("type = %04x\n",type);
 	if(type == IP_PROTOCOL)//暂时只处理IP报文
 	{
-		if(IPPROTO_TCP == *(char*)(m->buf_addr + m->data_off + IP_PROTO_ADDR) 
-		|| IPPROTO_UDP == *(char*)(m->buf_addr + m->data_off + IP_PROTO_ADDR))//只处理TCP和UDP报文
+		iphdr = (struct ipv4_hdr *)(m->buf_addr + m->data_off + L2_LEN);
+		if(IPPROTO_TCP == iphdr->next_proto_id || IPPROTO_UDP == iphdr->next_proto_id)//只处理TCP和UDP报文
 		{
 			printf("buf_addr = %p, data_off = %d, pkt_len = %d, data_len = %d, buf_len = %d\n"
 				,m->buf_addr,m->data_off,m->pkt_len,m->data_len,m->buf_len);
-			if(IPPROTO_TCP == *(char*)(m->buf_addr + m->data_off + IP_PROTO_ADDR))//处理TCP报文
+			if(IPPROTO_TCP == iphdr->next_proto_id)//处理TCP报文
 			{
-				printHex((m->buf_addr + m->data_off), m->data_len, 0, "TCP packet");
-
+				printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
+				struct tcp_hdr *tcphdr;
+				tcphdr = (struct tcp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl&0x0f) * 4);
+				printHex(tcphdr, m->data_len - L2_LEN - (iphdr->version_ihl&0x0f) * 4, 0, "TCP packet");
+				//printf("tcphdr->data_off >> 4 = %x\n",tcphdr->data_off >> 4);
+				int data_len = m->data_len - L2_LEN - (iphdr->version_ihl&0x0f) * 4 - (tcphdr->data_off >> 4) *4;
+				char* data_org = (void *)tcphdr + (tcphdr->data_off >> 4) *4;
+				printHex(data_org, data_len, 0, "TCP data");
 			}
 			else//处理UDP报文
 			{
-				printHex((m->buf_addr + m->data_off), m->data_len, 0, "UDP packet");
-
+				printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
+				struct udp_hdr *udphdr;
+				udphdr = (struct udp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl&0x0f) * 4);
+				printHex(udphdr, m->data_len - L2_LEN - (iphdr->version_ihl&0x0f) * 4, 0, "UDP packet");
+				int data_len = m->data_len - L2_LEN - (iphdr->version_ihl&0x0f) * 4 - 8;
+				char* data_org = (void *)udphdr + 8;
+				printHex(data_org, data_len, 0, "UDP data");
 			}
 		}
 	}
