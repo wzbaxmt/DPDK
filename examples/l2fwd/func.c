@@ -30,6 +30,8 @@
 #define decrypt 0x02
 typedef char BYTE;
 typedef unsigned short __sum16;
+typedef unsigned short u16;
+typedef unsigned int u32;
 
 #define ENC_OUT 1
 #define DEC_IN 0
@@ -191,6 +193,33 @@ static int do_sm4_encrypt(char *data_in, int data_len, int enc_dec, char *key_in
 
 	return (data_len + padding_len);
 }
+//检测填充的字节是否除最后一个字节外都为0
+static char padding_check(char *data, int len)
+{
+	char ex;
+	int flag = 0, i = 0;
+
+	ex = data[len - 1]; //数据部分的最后一位
+	if (ex < 1 || ex > 16)
+		return 0;
+
+	for (i = 1; i < ex; i++)
+	{
+		if (ex == data[len - i - 1])
+		{
+			;
+		}
+		else
+		{
+			flag = 1;
+			break;
+		}
+	}
+	if (flag == 0)
+		return ex;
+	else
+		return 0;
+}
 
 /*计算校验和*/
 static unsigned short int chksum_t(void *dataptr, unsigned short int len)
@@ -229,6 +258,27 @@ static unsigned short int chksum_t(void *dataptr, unsigned short int len)
 
 	src = (unsigned short int)acc;
 	return ~src;
+}
+/*计算TCP UDP校验和*/
+static u16 get_tcp_udp_checksum(u32 saddr, u32 daddr, u_short len, char ptcl, void *sbuf)
+{
+	struct psd_header psdh;
+	char buf[2048] = {0};
+	void *p;
+	u16 sum = 0;
+	psdh.saddr = saddr;
+	psdh.daddr = daddr;
+	psdh.mbz = 0x0;
+	psdh.ptcl = ptcl;
+	psdh.tcpl = htons(len);
+
+	p = (void *)buf;
+
+	memcpy(p, &psdh, sizeof(struct psd_header));
+	memcpy(p + sizeof(struct psd_header), sbuf, len);
+
+	sum = chksum_t(p, len + sizeof(struct psd_header));
+	return sum;
 }
 
 static int enc_msg_check(void *enc_data, int enc_len)
@@ -297,38 +347,104 @@ int pkt_filter(struct rte_mbuf *m)
 				int key_len = 0;
 				char result[2000] = {0};
 				int result_len = 0;
+				int padding_len = 0;
 				if(*data_origin = 0xff)//初步判断是加密报文
 				{
 					struct encHeader *enc_header = (struct encHeader *)data_origin;
-					if (!enc_msg_check(data_origin, data_len))
+					if (!enc_msg_check(data_origin, data_len))//不是加密报文
 					{
-						printHex(data_origin, data_len, 0, "not UDP enc packet,accept");
+						printHex(data_origin, data_len, 0, "not UDP enc packet");
+					}
+					else//是加密报文
+					{
+						//对应加密头能不能取出密钥,能取出密钥，则需解密
+						if (apply_config(&hD, DEC_IN, enc_header, key, data_len))
+						{
+							switch (enc_header->encType)
+							{
+								case aes_cbc:
+									//result_len = do_aes_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, "a", 0, result);
+									break;
+								case sm4_ecb:
+									result_len = do_sm4_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, result);
+									break;
+								default:
+									printf("%d Encryption algorithms are not supported yet!!\n", enc_header->encType);
+									result_len = -1;
+									break;
+							}
+							if (result_len < 0)
+							{
+								printf("udp do_%x_encrypt dec fail!!\n", enc_header->encType);
+							}
+							else
+							{
+								//填充检查，检验填充了几位
+								padding_len = padding_check(result, result_len);
+								if (!padding_len) //解密后数据肯定有扩充，没有则是出错报文
+								{
+									printHex(result, result_len, 0, "UDP padding_len error");
+								}
+								else
+								{
+									memcpy(data_origin, result, result_len - padding_len);
+									m->data_len = m->data_len - padding_len - sizeof(struct encHeader);
+									
+									iphdr->total_length = iphdr->total_length - padding_len - sizeof(struct encHeader); //remove padding from length
+									iphdr->hdr_checksum = 0;
+									iphdr->hdr_checksum = rte_ipv4_cksum(iphdr);
+									
+									tcphdr->cksum = 0;
+									tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) *4 - padding_len), IPPROTO_TCP, tcphdr));
+									return true; //解密完成后直接接收
+								}
+							}
+						}
+					}
+				}
+				/*****如果之前没有返回，则报文可能需要加密***/
+				struct encHeader enc_header = {0};
+				//对应hD能不能取出密钥
+				if (apply_config(&hD, ENC_OUT, &enc_header, key, data_len))//能取出密钥，则报文需要进行加密处理
+				{
+					switch (enc_header.encType)
+					{
+						case aes_cbc:
+							//result_len = do_aes_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, "a", 0, result);
+							break;
+						case sm4_ecb:
+							result_len = do_sm4_encrypt(data_origin, data_len, DEC_IN, key, key_len, result);
+							break;
+						default:
+							printf("%d Encryption algorithms are not supported yet!!\n", enc_header.encType);
+							result_len = -1;
+							break;
+					}
+					if(result_len < 0)
+					{
+						printf("tcp do_%d_encrypt enc fail!!\n", enc_header.encType);
 						return true;
 					}
-					key_len = apply_config(&hD, DEC_IN, enc_header, key, data_len); //对应加密头能不能取出密钥
-					if (key_len)												//能取出密钥，则需解密
+					else
 					{
-						switch (enc_header->encType)
-						{
-							case aes_cbc:
-							{
-								//result_len = do_aes_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, "a", 0, result);
-							}
-							break;
-							case sm4_ecb:
-							{
-								result_len = do_sm4_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, result);
-							}
-							break;
-							default:
-							{
-								printf("%d Encryption algorithms are not supported yet!!\n", enc_header->encType);
-								result_len = -1;
-							}
-							break;
-						}
-
+						enc_header.msglen = htons(result_len + sizeof(struct encHeader));
+						enc_header.CRC = 0x0000;
+						memcpy(data_origin, &enc_header, sizeof(struct encHeader));
+						memcpy(data_origin + sizeof(struct encHeader), result, result_len);
+						enc_header.CRC = htons(chksum_t(data_origin, result_len + sizeof(struct encHeader))); //计算校验和，算法与设备端一致
+						
+						iphdr->total_length = iphdr->total_length + result_len - data_len + sizeof(struct encHeader); //remove padding from length
+						iphdr->hdr_checksum = 0;
+						iphdr->hdr_checksum = rte_ipv4_cksum(iphdr); //re-checksum for IP
+						tcphdr->cksum = 0;
+						tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) *4 + sizeof(struct encHeader)), IPPROTO_TCP, tcphdr));
+						return true;
 					}
+
+				}
+				else //没有匹配的规则，则不需要进一步处理了,直接返回
+				{
+					return true;
 				}
 			}
 			else//处理UDP报文

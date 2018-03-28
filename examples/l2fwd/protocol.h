@@ -123,6 +123,14 @@ struct encHeader //26 ? 加密头
 	unsigned char keyID[16];
 	unsigned short CRC;
 };
+struct psd_header //6 用于计算校验和
+{
+	unsigned int saddr;
+	unsigned int daddr;
+	char mbz;
+	char ptcl;
+	unsigned short tcpl;
+};
 
 unsigned char rcv_cfg(char* msg_addr, int msg_len);
 unsigned char rcv_key(char* msg_addr, int msg_len);
