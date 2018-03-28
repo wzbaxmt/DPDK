@@ -381,7 +381,7 @@ int rcv_msg(char *msg_addr, int msg_len)
 //key			加密密钥的指针
 //pkt_len		此报文的长度
 //key_len		返回值 0 无需操作 其他 加密密钥长度
-static int apply_config(struct ip_struct *ip_data, int in_out, struct encHeader *enc_header, char *key, int pkt_len)
+int apply_config(struct ip_struct *ip_data, int in_out, struct encHeader *enc_header, char *key, int pkt_len)
 {
 	int key_len = 0;
 	int err = 0;

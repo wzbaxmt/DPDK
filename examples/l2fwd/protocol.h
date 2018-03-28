@@ -132,6 +132,7 @@ int send_msg(char* msg_addr, int msg_len);
 
 int send_reply_msg(struct msg_hd0 reply_msg_hd, unsigned char status);
 
+int apply_config(struct ip_struct *ip_data, int in_out, struct encHeader *enc_header, char *key, int pkt_len);
 
 
 

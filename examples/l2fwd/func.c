@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include "func.h"
 #include "sm4.h"
+#include "protocol.h"
+
 #define SOCKET_LOG_PATH	"/var/log/socket_log.log"
 
 #define true	1	//报文需要处理
@@ -27,6 +29,8 @@
 #define encrypt 0x01
 #define decrypt 0x02
 typedef char BYTE;
+typedef unsigned short __sum16;
+
 #define ENC_OUT 1
 #define DEC_IN 0
 
@@ -151,7 +155,7 @@ static int do_sm4_encrypt(char *data_in, int data_len, int enc_dec, char *key_in
 {
 	if (data_len % 16 != 0 && enc_dec == DEC_IN) //流入的需解密的报文必须是16字节的整数倍
 	{
-		printk("do_sm4_encrypt data_len%16 != 0  && enc_dec == DEC_IN !\n");
+		printf("do_sm4_encrypt data_len%16 != 0  && enc_dec == DEC_IN !\n");
 		return -1;
 	}
 
@@ -170,7 +174,7 @@ static int do_sm4_encrypt(char *data_in, int data_len, int enc_dec, char *key_in
 	{
 		//加密
 		ret = SM4ECBEncrypt(result, buf, (data_len + padding_len), key_in);
-		printk("SM4 encrypt success***********************\n");
+		printf("SM4 encrypt success***********************\n");
 #ifdef DEBUG
 		printHex(buf, data_len, padding_len, "SM4ECBEncrypt buf is");
 #endif
@@ -179,7 +183,7 @@ static int do_sm4_encrypt(char *data_in, int data_len, int enc_dec, char *key_in
 	{
 		//解密
 		ret = SM4ECBDecrypt(result, buf, (data_len + padding_len), key_in);
-		printk("SM4 decrypt success***********************\n");
+		printf("SM4 decrypt success***********************\n");
 #ifdef DEBUG
 		printHex(buf, data_len, padding_len, "SM4ECBDecrypt buf is");
 #endif
@@ -242,16 +246,16 @@ static int enc_msg_check(void *enc_data, int enc_len)
 	if (new_msglen == htons(enc_header->msglen) && new_crc == rcv_crc)
 	{
 #ifdef DEBUG
-		printk("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
-		printk("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
+		printf("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
+		printf("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
 #endif
 		return 1;
 	}
 	else
 	{
 		printHex(enc_header, sizeof(struct encHeader), 0, "enc_msg_check");
-		printk("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
-		printk("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
+		printf("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
+		printf("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
 		return 0;
 	}
 #else
@@ -301,7 +305,7 @@ int pkt_filter(struct rte_mbuf *m)
 						printHex(data_origin, data_len, 0, "not UDP enc packet,accept");
 						return true;
 					}
-					key_len = apply_config(hD, DEC_IN, enc_header, key, data_len); //对应加密头能不能取出密钥
+					key_len = apply_config(&hD, DEC_IN, enc_header, key, data_len); //对应加密头能不能取出密钥
 					if (key_len)												//能取出密钥，则需解密
 					{
 						switch (enc_header->encType)
@@ -318,7 +322,7 @@ int pkt_filter(struct rte_mbuf *m)
 							break;
 							default:
 							{
-								printk("%d Encryption algorithms are not supported yet!!\n", enc_header.encType);
+								printf("%d Encryption algorithms are not supported yet!!\n", enc_header->encType);
 								result_len = -1;
 							}
 							break;
