@@ -69,7 +69,7 @@
 #include <rte_mbuf.h>
 
 #include "func.h"
-
+#include "protocol.h"
 static volatile bool force_quit;
 
 /* MAC updating enabled by default */
@@ -309,7 +309,7 @@ l2fwd_main_loop(void)
 
 			port_statistics[portid].rx += nb_rx;
 			for (j = 0; j < nb_rx; j++) {
-				printf("Read %d packet from RX queues\n",nb_rx);
+				//printf("Read %d packet from RX queues\n",nb_rx);
 				m = pkts_burst[j];
 				pkt_filter(m);
 				rte_prefetch0(rte_pktmbuf_mtod(m, void *));
@@ -550,6 +550,18 @@ signal_handler(int signum)
 	}
 }
 
+int init_hashmap(void)
+{
+	ip2id = hashmap_new();
+	id2data = hashmap_new();
+	
+}
+int destroy_hashmap(void)
+{
+	hashmap_free(ip2id);
+	hashmap_free(id2data);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -561,7 +573,8 @@ main(int argc, char **argv)
 	uint16_t portid, last_port;
 	unsigned lcore_id, rx_lcore_id;
 	unsigned nb_ports_in_mask = 0;
-
+	
+	init_hashmap();
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
 	if (ret < 0)
@@ -769,6 +782,7 @@ main(int argc, char **argv)
 		rte_eth_dev_close(portid);
 		printf(" Done\n");
 	}
+	destroy_hashmap();
 	printf("Bye...\n");
 
 	return ret;

@@ -2,7 +2,7 @@
 #include <rte_ip.h>
 #include <rte_tcp.h>
 #include <rte_udp.h>
-#include <arpa/inet.h> 
+#include <arpa/inet.h>
 
 
 /*
@@ -14,14 +14,14 @@
 #include "sm4.h"
 #include "protocol.h"
 
-#define SOCKET_LOG_PATH	"/var/log/socket_log.log"
+#define SOCKET_LOG_PATH "/var/log/socket_log.log"
 
-#define true	1	//报文需要处理
-#define false	0	//不需要处理
+#define true 1			   //报文需要处理
+#define false 0			   //不需要处理
 #define IP_PROTOCOL 0x0008 //实际应该是0800大小端未转换
-#define MAC_LEN		12
-#define L2_LEN		14
-#define IP_PROTO_ADDR	23
+#define MAC_LEN 12
+#define L2_LEN 14
+#define IP_PROTO_ADDR 23
 #define aes_cbc 0x01
 #define sm4_ecb 0x06
 
@@ -37,7 +37,7 @@ typedef unsigned int u32;
 #define DEC_IN 0
 
 void printHex(char *data, int data_len, int padding_len, char *pt_mark)
-{ 
+{
 	int i = 0;
 	printf("[%s]length=%d:%d;Data Content:\n", pt_mark, data_len, padding_len);
 	for (i = 0; i < (data_len + padding_len); i++)
@@ -72,8 +72,8 @@ unsigned long read_uc_dat(unsigned char **p_conf, unsigned char number)
 int socket_syslog_write(char *strto)
 {
 	FILE *fd = NULL;
-	
-	if(NULL == (fd = fopen(SOCKET_LOG_PATH,"a+")))
+
+	if (NULL == (fd = fopen(SOCKET_LOG_PATH, "a+")))
 	{
 		printf("fopen /var/log/socket_log.log error!\n");
 		return -1;
@@ -87,7 +87,7 @@ int socket_syslog_write_hex(char *data, int data_len, int padding_len, char *str
 {
 	FILE *fd = NULL;
 	int i;
-	if(NULL == (fd = fopen(SOCKET_LOG_PATH,"a+")))
+	if (NULL == (fd = fopen(SOCKET_LOG_PATH, "a+")))
 	{
 		printf("fopen /var/log/socket_log.log error!\n");
 		return -1;
@@ -108,18 +108,20 @@ int socket_syslog_write_hex(char *data, int data_len, int padding_len, char *str
 /*readline函数实现*/
 int readline(int fd, char *vptr, size_t maxlen)
 {
-	int	n, rc;
-	char	c, *ptr;
+	int n, rc;
+	char c, *ptr;
 
 	ptr = vptr;
-	for (n = 0; n < maxlen; n++) {
-		if ( (rc = read(fd, &c,1)) == 1) {
+	for (n = 0; n < maxlen; n++)
+	{
+		if ((rc = read(fd, &c, 1)) == 1)
+		{
 			*ptr++ = c;
-		} 
+		}
 	}
 
-	*ptr = 0;	/* null terminate like fgets() */
-	return(n);
+	*ptr = 0; /* null terminate like fgets() */
+	return (n);
 }
 
 /*=======================================================================*/
@@ -320,147 +322,178 @@ int pkt_filter(struct rte_mbuf *m)
 	uint32_t dest_addr;
 	unsigned short type;
 	memcpy(&type, (m->buf_addr + m->data_off + MAC_LEN), 2);
-	printf("type = %04x\n",type);
-	if(type == IP_PROTOCOL)//暂时只处理IP报文
+	//printf("type = %04x\n", type);
+	if (type == IP_PROTOCOL) //暂时只处理IP报文
 	{
+		char *data_origin = NULL;
+		int data_len = 0;
+		char key[32] = {0};
+		int key_len = 0;
+		char result[2000] = {0};
+		int result_len = 0;
+		int padding_len = 0;
+		struct encHeader enc_header = {0};
+		struct tcp_hdr *tcphdr = NULL;
+		struct udp_hdr *udphdr = NULL;
+		
 		iphdr = (struct ipv4_hdr *)(m->buf_addr + m->data_off + L2_LEN);
-		if(IPPROTO_TCP == iphdr->next_proto_id || IPPROTO_UDP == iphdr->next_proto_id)//只处理TCP和UDP报文
+		printf("buf_addr = %p, data_off = %d, pkt_len = %d, data_len = %d, buf_len = %d\n", m->buf_addr, m->data_off, m->pkt_len, m->data_len, m->buf_len);
+		struct ip_struct hD = {0};
+		memcpy(hD.sMac, m->buf_addr + m->data_off + 6, 6);
+		memcpy(hD.dMac, m->buf_addr + m->data_off, 6);
+		memcpy(hD.sIP, &iphdr->src_addr, 4);
+		memcpy(hD.dIP, &iphdr->dst_addr, 4);
+		printHex(&hD, sizeof(hD), 0, "hD");
+		if (IPPROTO_TCP == iphdr->next_proto_id) //处理TCP报文
 		{
-			printf("buf_addr = %p, data_off = %d, pkt_len = %d, data_len = %d, buf_len = %d\n"
-				,m->buf_addr,m->data_off,m->pkt_len,m->data_len,m->buf_len);
-			struct ip_struct hD = {0};
-			memcpy(hD.sMac, m->buf_addr + m->data_off + 6, 6);
-			memcpy(hD.dMac, m->buf_addr + m->data_off, 6);
-			memcpy(hD.sIP, &iphdr->src_addr, 4);
-			memcpy(hD.dIP, &iphdr->dst_addr, 4);
-			printHex(&hD, sizeof(hD), 0, "hD");
-			if(IPPROTO_TCP == iphdr->next_proto_id)//处理TCP报文
+			printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
+			tcphdr = (struct tcp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl & 0x0f) * 4);
+			printHex(tcphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "TCP packet");
+			data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - (tcphdr->data_off >> 4) * 4;
+			data_origin = (void *)tcphdr + (tcphdr->data_off >> 4) * 4;
+			printHex(data_origin, data_len, 0, "TCP data");
+			memcpy(hD.sPort, &tcphdr->src_port, 2);
+			memcpy(hD.dPort, &tcphdr->dst_port, 2);
+		}
+		else if (IPPROTO_UDP == iphdr->next_proto_id) //处理UDP报文
+		{
+			printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
+			udphdr = (struct udp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl & 0x0f) * 4);
+			printHex(udphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "UDP packet");
+			data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - 8;
+			data_origin = (void *)udphdr + 8;
+			printHex(data_origin, data_len, 0, "UDP data");
+			memcpy(hD.sPort, &udphdr->src_port, 2);
+			memcpy(hD.dPort, &udphdr->dst_port, 2);
+		}
+		else //其他IP协议，暂不处理
+		{
+			return true;
+		}
+
+		if (*data_origin == 0xff) //初步判断是加密报文
+		{ 
+			struct encHeader *enc_header = (struct encHeader *)data_origin;
+			if (!enc_msg_check(data_origin, data_len)) //不是加密报文
 			{
-				printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
-				struct tcp_hdr *tcphdr;
-				tcphdr = (struct tcp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl&0x0f) * 4);
-				printHex(tcphdr, m->data_len - L2_LEN - (iphdr->version_ihl&0x0f) * 4, 0, "TCP packet");
-				int data_len = m->data_len - L2_LEN - (iphdr->version_ihl&0x0f) * 4 - (tcphdr->data_off >> 4) *4;
-				char* data_origin = (void *)tcphdr + (tcphdr->data_off >> 4) *4;
-				printHex(data_origin, data_len, 0, "TCP data");
-				char key[32] = {0};
-				int key_len = 0;
-				char result[2000] = {0};
-				int result_len = 0;
-				int padding_len = 0;
-				if(*data_origin = 0xff)//初步判断是加密报文
+				printHex(data_origin, data_len, 0, "not enc packet");
+			}
+			else //是加密报文
+			{
+				//对应加密头能不能取出密钥,能取出密钥，则需解密
+				if (apply_config(&hD, DEC_IN, enc_header, key, data_len))
 				{
-					struct encHeader *enc_header = (struct encHeader *)data_origin;
-					if (!enc_msg_check(data_origin, data_len))//不是加密报文
+					switch (enc_header->encType)
 					{
-						printHex(data_origin, data_len, 0, "not UDP enc packet");
+					case aes_cbc:
+						//result_len = do_aes_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, "a", 0, result);
+						break;
+					case sm4_ecb:
+						result_len = do_sm4_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, result);
+						break;
+					default:
+						printf("%d Encryption algorithms are not supported yet!!\n", enc_header->encType);
+						result_len = -1;
+						break;
 					}
-					else//是加密报文
+					if (result_len < 0)
 					{
-						//对应加密头能不能取出密钥,能取出密钥，则需解密
-						if (apply_config(&hD, DEC_IN, enc_header, key, data_len))
-						{
-							switch (enc_header->encType)
-							{
-								case aes_cbc:
-									//result_len = do_aes_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, "a", 0, result);
-									break;
-								case sm4_ecb:
-									result_len = do_sm4_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, result);
-									break;
-								default:
-									printf("%d Encryption algorithms are not supported yet!!\n", enc_header->encType);
-									result_len = -1;
-									break;
-							}
-							if (result_len < 0)
-							{
-								printf("udp do_%x_encrypt dec fail!!\n", enc_header->encType);
-							}
-							else
-							{
-								//填充检查，检验填充了几位
-								padding_len = padding_check(result, result_len);
-								if (!padding_len) //解密后数据肯定有扩充，没有则是出错报文
-								{
-									printHex(result, result_len, 0, "UDP padding_len error");
-								}
-								else
-								{
-									memcpy(data_origin, result, result_len - padding_len);
-									m->data_len = m->data_len - padding_len - sizeof(struct encHeader);
-									
-									iphdr->total_length = iphdr->total_length - padding_len - sizeof(struct encHeader); //remove padding from length
-									iphdr->hdr_checksum = 0;
-									iphdr->hdr_checksum = rte_ipv4_cksum(iphdr);
-									
-									tcphdr->cksum = 0;
-									tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) *4 - padding_len), IPPROTO_TCP, tcphdr));
-									return true; //解密完成后直接接收
-								}
-							}
-						}
-					}
-				}
-				/*****如果之前没有返回，则报文可能需要加密***/
-				struct encHeader enc_header = {0};
-				//对应hD能不能取出密钥
-				if (apply_config(&hD, ENC_OUT, &enc_header, key, data_len))//能取出密钥，则报文需要进行加密处理
-				{
-					switch (enc_header.encType)
-					{
-						case aes_cbc:
-							//result_len = do_aes_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, "a", 0, result);
-							break;
-						case sm4_ecb:
-							result_len = do_sm4_encrypt(data_origin, data_len, DEC_IN, key, key_len, result);
-							break;
-						default:
-							printf("%d Encryption algorithms are not supported yet!!\n", enc_header.encType);
-							result_len = -1;
-							break;
-					}
-					if(result_len < 0)
-					{
-						printf("tcp do_%d_encrypt enc fail!!\n", enc_header.encType);
+						printf("tcp do_%x_encrypt dec fail!!\n", enc_header->encType);
 						return true;
 					}
 					else
 					{
-						enc_header.msglen = htons(result_len + sizeof(struct encHeader));
-						enc_header.CRC = 0x0000;
-						memcpy(data_origin, &enc_header, sizeof(struct encHeader));
-						memcpy(data_origin + sizeof(struct encHeader), result, result_len);
-						enc_header.CRC = htons(chksum_t(data_origin, result_len + sizeof(struct encHeader))); //计算校验和，算法与设备端一致
-						
-						iphdr->total_length = iphdr->total_length + result_len - data_len + sizeof(struct encHeader); //remove padding from length
-						iphdr->hdr_checksum = 0;
-						iphdr->hdr_checksum = rte_ipv4_cksum(iphdr); //re-checksum for IP
-						tcphdr->cksum = 0;
-						tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) *4 + sizeof(struct encHeader)), IPPROTO_TCP, tcphdr));
-						return true;
-					}
+						//填充检查，检验填充了几位
+						padding_len = padding_check(result, result_len);
+						if (!padding_len) //解密后数据肯定有扩充，没有则是出错报文
+						{
+							printHex(result, result_len, 0, "padding_len error");
+							return true;
+						}
+						else
+						{
+							memcpy(data_origin, result, result_len - padding_len);
+							m->data_len = m->data_len - padding_len - sizeof(struct encHeader);
 
+							iphdr->total_length = iphdr->total_length - padding_len - sizeof(struct encHeader); //remove padding from length
+							iphdr->hdr_checksum = 0;
+							iphdr->hdr_checksum = rte_ipv4_cksum(iphdr);
+							if (IPPROTO_TCP == iphdr->next_proto_id) //处理TCP报文
+							{
+								tcphdr->cksum = 0;
+								tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) * 4 - padding_len), IPPROTO_TCP, tcphdr));
+								return true; //解密完成后直接接收
+							}
+							else//处理UDP报文
+							{
+								udphdr->dgram_len = udphdr->dgram_len - padding_len - sizeof(struct encHeader);
+								udphdr->dgram_cksum = 0;
+								udphdr->dgram_cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + 8 - padding_len), IPPROTO_UDP, udphdr));
+								return true; //解密完成后直接接收
+							}
+						}
+					}
 				}
-				else //没有匹配的规则，则不需要进一步处理了,直接返回
-				{
-					return true;
-				}
-			}
-			else//处理UDP报文
-			{
-				printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
-				struct udp_hdr *udphdr;
-				udphdr = (struct udp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl&0x0f) * 4);
-				printHex(udphdr, m->data_len - L2_LEN - (iphdr->version_ihl&0x0f) * 4, 0, "UDP packet");
-				int data_len = m->data_len - L2_LEN - (iphdr->version_ihl&0x0f) * 4 - 8;
-				char* data_origin = (void *)udphdr + 8;
-				printHex(data_origin, data_len, 0, "UDP data");
 			}
 		}
+		/*****如果之前没有返回，则报文可能需要加密***/
+
+		//对应hD能不能取出密钥
+		if (apply_config(&hD, ENC_OUT, &enc_header, key, data_len)) //能取出密钥，则报文需要进行加密处理
+		{
+			switch (enc_header.encType)
+			{
+			case aes_cbc:
+				//result_len = do_aes_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, "a", 0, result);
+				break;
+			case sm4_ecb:
+				result_len = do_sm4_encrypt(data_origin, data_len, DEC_IN, key, key_len, result);
+				break;
+			default:
+				printf("%d Encryption algorithms are not supported yet!!\n", enc_header.encType);
+				result_len = -1;
+				break;
+			}
+			if (result_len < 0)
+			{
+				printf("do_%d_encrypt enc fail!!\n", enc_header.encType);
+				return true;
+			}
+			else
+			{
+				enc_header.msglen = htons(result_len + sizeof(struct encHeader));
+				enc_header.CRC = 0x0000;
+				memcpy(data_origin, &enc_header, sizeof(struct encHeader));
+				memcpy(data_origin + sizeof(struct encHeader), result, result_len);
+				enc_header.CRC = htons(chksum_t(data_origin, result_len + sizeof(struct encHeader))); //计算校验和，算法与设备端一致
+
+				iphdr->total_length = iphdr->total_length + result_len - data_len + sizeof(struct encHeader); //remove padding from length
+				iphdr->hdr_checksum = 0;
+				iphdr->hdr_checksum = rte_ipv4_cksum(iphdr); //re-checksum for IP
+				if (IPPROTO_TCP == iphdr->next_proto_id) //处理TCP报文
+				{
+					tcphdr->cksum = 0;
+					tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) * 4 + sizeof(struct encHeader)), IPPROTO_TCP, tcphdr));
+					return true;
+				}
+				else
+				{
+					udphdr->dgram_len = udphdr->dgram_len + (result_len - data_len) + sizeof(struct encHeader);
+					udphdr->dgram_cksum = 0;
+					udphdr->dgram_cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + 8 + sizeof(struct encHeader)), IPPROTO_UDP, udphdr));
+					return true; //解密完成后直接接收
+				}
+			}
+		}
+		else //没有匹配的规则，则不需要进一步处理了,直接返回
+		{
+			return true;
+		}
 	}
-	
-	return true;
+	else//非IP报文暂不处理
+	{
+		return true;
+	}
 }
 
 
