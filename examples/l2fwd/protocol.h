@@ -33,8 +33,8 @@
 #define KIDLen 16		//最带KeyID字节数
 
 #define pOPTYPE		4
-#define pLISTNUM	5
-#define	pDIDLEN		7
+#define pLISTNUM	7
+#define	pDIDLEN		5
 #define	pDID		8
 #define pLIST		16
 

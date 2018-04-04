@@ -186,7 +186,7 @@ print_stats(void)
 		   total_packets_dropped);
 	printf("\n====================================================\n");
 }
-//macµØÖ·Ñ§Ï°
+//macåœ°å€å­¦ä¹ 
 static void
 l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 {
@@ -415,7 +415,7 @@ static const struct option lgopts[] = {
 	{ CMD_LINE_OPT_NO_MAC_UPDATING, no_argument, &mac_updating, 0},
 	{NULL, 0, 0, 0}
 };
-/*´¦Àíl2fwd main µÄÈë²Î */
+/*å¤„ç†l2fwd main çš„å…¥å‚ */
 /* Parse the argument given in the command line of the application */
 static int
 l2fwd_parse_args(int argc, char **argv)
@@ -538,9 +538,9 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
 		}
 	}
 }
-//ĞÅºÅ´¦Àíº¯Êı£¬ÊÕµ½ĞÅºÅºó½«force_quitÖÃÎª1
-//SIGINT ctrl+C²úÉú
-//SIGTERM killÃüÁî²úÉú
+//ä¿¡å·å¤„ç†å‡½æ•°ï¼Œæ”¶åˆ°ä¿¡å·åå°†force_quitç½®ä¸º1
+//SIGINT ctrl+Cäº§ç”Ÿ
+//SIGTERM killå‘½ä»¤äº§ç”Ÿ
 static void
 signal_handler(int signum)
 {
@@ -589,8 +589,8 @@ main(int argc, char **argv)
 	rte_pdump_init(NULL);
 	#endif
 	force_quit = false;
-	signal(SIGINT, signal_handler);//ÉèÖÃÄ³Ò»ĞÅºÅµÄ¶ÔÓ¦¶¯×÷,CTRL+C»òÕßDELETE
-	signal(SIGTERM, signal_handler);//ÉèÖÃÄ³Ò»ĞÅºÅµÄ¶ÔÓ¦¶¯×÷,ÇëÇóÖĞÖ¹½ø³Ì£¬killÃüÁîÈ±Ê¡·¢ËÍ
+	signal(SIGINT, signal_handler);//è®¾ç½®æŸä¸€ä¿¡å·çš„å¯¹åº”åŠ¨ä½œ,CTRL+Cæˆ–è€…DELETE
+	signal(SIGTERM, signal_handler);//è®¾ç½®æŸä¸€ä¿¡å·çš„å¯¹åº”åŠ¨ä½œ,è¯·æ±‚ä¸­æ­¢è¿›ç¨‹ï¼Œkillå‘½ä»¤ç¼ºçœå‘é€
 
 	/* parse application arguments (after the EAL ones) */
 	ret = l2fwd_parse_args(argc, argv);
@@ -602,13 +602,13 @@ main(int argc, char **argv)
 	/* convert to number of cycles */
 	timer_period *= rte_get_timer_hz();
 
-	/* create the mbuf pool ´´½¨ÄÚ´æ³Ø*/
+	/* create the mbuf pool åˆ›å»ºå†…å­˜æ± */
 	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", NB_MBUF,
 		MEMPOOL_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
 		rte_socket_id());
 	if (l2fwd_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
-	//rte_eth_dev_count()º¯Êı·µ»Ø¶Ë¿Ú×ÜÊı
+	//rte_eth_dev_count()å‡½æ•°è¿”å›ç«¯å£æ€»æ•°
 	nb_ports = rte_eth_dev_count();
 	if (nb_ports == 0)
 		rte_exit(EXIT_FAILURE, "No Ethernet ports - bye\n");
@@ -620,11 +620,11 @@ main(int argc, char **argv)
 
 	/*
 	 * Each logical core is assigned a dedicated TX queue on each port.
-	 * ÉèÖÃÃ¿¸ö¶Ë¿ÚµÄÄ¿µÄ¶Ë¿Ú
+	 * è®¾ç½®æ¯ä¸ªç«¯å£çš„ç›®çš„ç«¯å£
 	 */
 	for (portid = 0; portid < nb_ports; portid++)
 	{
-		/* skip ports that are not enabled //Ìø¹ıÎ´·ÖÅä»òÕß²»¿ÉÓÃ¶Ë¿Ú*/
+		/* skip ports that are not enabled //è·³è¿‡æœªåˆ†é…æˆ–è€…ä¸å¯ç”¨ç«¯å£*/
 		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
 			continue;
 
@@ -640,7 +640,7 @@ main(int argc, char **argv)
 
 		rte_eth_dev_info_get(portid, &dev_info);
 	}
-	//ÆæÊı¸ö¶Ë¿Ú£¬Ôò²»×ª·¢
+	//å¥‡æ•°ä¸ªç«¯å£ï¼Œåˆ™ä¸è½¬å‘
 	if (nb_ports_in_mask % 2) {
 		printf("Notice: odd number of ports in portmask.\n");
 		l2fwd_dst_ports[last_port] = last_port;
@@ -648,7 +648,7 @@ main(int argc, char **argv)
 
 	rx_lcore_id = 0;
 	qconf = NULL;
-    /* Ã¿¸öcore¸ºÔğÊÕl2fwd_rx_queue_per_lcore¸ö¶Ë¿Ú, Ã¿¸ö¶Ë¿Ú(ÆäÊµÓ¦¸ÃÊÇQUEUE,ÒòÎªÕâÀïÒ»¸öportÖ»ÓĞÒ»¸öQUEUE)Ö»ÄÜÓÉÒ»¸ölcore½øĞĞÊÕ°ü */  
+    /* æ¯ä¸ªcoreè´Ÿè´£æ”¶l2fwd_rx_queue_per_lcoreä¸ªç«¯å£, æ¯ä¸ªç«¯å£(å…¶å®åº”è¯¥æ˜¯QUEUE,å› ä¸ºè¿™é‡Œä¸€ä¸ªportåªæœ‰ä¸€ä¸ªQUEUE)åªèƒ½ç”±ä¸€ä¸ªlcoreè¿›è¡Œæ”¶åŒ… */  
 	/* Initialize the port/queue configuration of each logical core */
 	for (portid = 0; portid < nb_ports; portid++) {
 		/* skip ports that are not enabled */
@@ -674,7 +674,7 @@ main(int argc, char **argv)
 	}
 
 	nb_ports_available = nb_ports;
-	/* Ã¿¸öportÊÕ·¢°ü¶ÓÁĞµÄ³õÊ¼»¯ */  
+	/* æ¯ä¸ªportæ”¶å‘åŒ…é˜Ÿåˆ—çš„åˆå§‹åŒ– */  
 	/* Initialise each port */
 	for (portid = 0; portid < nb_ports; portid++) {
 		/* skip ports that are not enabled */
@@ -697,7 +697,7 @@ main(int argc, char **argv)
 			rte_exit(EXIT_FAILURE,
 				 "Cannot adjust number of descriptors: err=%d, port=%u\n",
 				 ret, portid);
-		//»ñÈ¡macµØÖ·ºÍ¶Ë¿ÚºÅ
+		//è·å–macåœ°å€å’Œç«¯å£å·
 		rte_eth_macaddr_get(portid,&l2fwd_ports_eth_addr[portid]);
 
 		/* init one RX queue */
@@ -768,7 +768,7 @@ main(int argc, char **argv)
 	check_all_ports_link_status(nb_ports, l2fwd_enabled_port_mask);
 
 	ret = 0;
-	/* launch per-lcore init on every lcore *//* Æô¶¯l2fwdÏß³Ì */ 
+	/* launch per-lcore init on every lcore *//* å¯åŠ¨l2fwdçº¿ç¨‹ */ 
 	rte_eal_mp_remote_launch(l2fwd_launch_one_lcore, NULL, CALL_MASTER);
 	RTE_LCORE_FOREACH_SLAVE(lcore_id) {
 		if (rte_eal_wait_lcore(lcore_id) < 0) {

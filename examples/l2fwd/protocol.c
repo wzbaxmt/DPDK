@@ -191,6 +191,11 @@ unsigned char key_update(char *msg_addr, unsigned short list_num)
 				if (0 == memcmp(&p->key_list[i], (msg_addr + pLIST + (sizeof(struct key_list0) * j)), sizeof(struct key_list0)))
 				{
 					exist++; //不能存在重复密钥
+					
+					socket_syslog_write("key alerady exist!\n");
+					socket_syslog_write_hex(msg_addr + pLIST, sizeof(struct key_list0) * list_num, 0, "new key");
+					socket_syslog_write_hex(&p->key_list[0], sizeof(struct key_list0) * 3, 0, "exist key");
+					
 					break;
 				}
 			}
@@ -239,14 +244,18 @@ unsigned char rcv_cfg(char *msg_addr, int msg_len)
 	memcpy(&list_num, msg_addr + pLISTNUM, sizeof(list_num));
 	if (list_num > 999 || msg_len < (16 + sizeof(struct config_list0) * list_num))
 	{
-		socket_syslog_write("list_num error\n");
+		char buffer[200] = {0};
+		sprintf(buffer, "list_num error, list_num = %d\n", list_num);
+		socket_syslog_write(buffer);
 		return 1;
 	}
 	
 	memcpy(&deviceID_len, msg_addr + pDIDLEN, sizeof(deviceID_len));
 	if (deviceID_len != DIDLen) //目前限定为DIDLen长度的DeviceID，8位
 	{
-		socket_syslog_write("deviceID_len error\n");
+		char buffer[200] = {0};
+		sprintf(buffer, "deviceID_len error, deviceID_len = %d\n", deviceID_len);
+		socket_syslog_write(buffer);
 		return 1;
 	}
 
@@ -273,6 +282,9 @@ unsigned char rcv_cfg(char *msg_addr, int msg_len)
 			socket_syslog_write_hex((char*)&op_type, sizeof(op_type), 0, "op_type error");
 			break;
 	}
+	char buffer[200] = {0};
+	sprintf(buffer, "do %d op_type, result is %d\n", op_type, result);
+	socket_syslog_write(buffer);
 	return result;
 }
 unsigned char rcv_key(char *msg_addr, int msg_len)
@@ -284,13 +296,17 @@ unsigned char rcv_key(char *msg_addr, int msg_len)
 	memcpy(&list_num, msg_addr + pLISTNUM, sizeof(list_num));
 	if (list_num > 3 || msg_len < (16 + sizeof(struct key_list0) * list_num))
 	{
-		socket_syslog_write("list_num error\n");
+		char buffer[200] = {0};
+		sprintf(buffer, "list_num error, list_num = %d\n", list_num);
+		socket_syslog_write(buffer);
 		return 1;
 	}
 	memcpy(&deviceID_len, msg_addr + pDIDLEN, sizeof(deviceID_len));
 	if (deviceID_len != DIDLen) //目前限定为DIDLen长度的DeviceID，8位
 	{
-		socket_syslog_write("deviceID_len error\n");
+		char buffer[200] = {0};
+		sprintf(buffer, "deviceID_len error, deviceID_len = %d\n", deviceID_len);
+		socket_syslog_write(buffer);
 		return 1;
 	}
 	result = key_update(msg_addr, list_num);
@@ -342,7 +358,9 @@ int rcv_msg(char *msg_addr, int msg_len)
 	socket_syslog_write_hex(msg_addr, msg_len, 0, "rcv msg from server");
 	if (msg_len < 16 && msg_len != 8)
 	{
-		socket_syslog_write("msg_len error\n");
+		char buffer[200] = {0};
+		sprintf(buffer, "msg_len error, msg_len = %d\n", msg_len);
+		socket_syslog_write(buffer);
 		return 1;
 	}
 	

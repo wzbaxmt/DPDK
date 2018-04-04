@@ -58,7 +58,6 @@ int connect_to_server()
 		{
 			perror("server terminated prematurely");
 		}
-		printHex(recvline, rcv_byte, 0, "rcv msg");
 		rcv_msg(recvline, rcv_byte);
 		printf("*****************************************\n");
 	}
