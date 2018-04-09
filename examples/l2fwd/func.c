@@ -13,6 +13,7 @@
 #include "func.h"
 #include "sm4.h"
 #include "protocol.h"
+#include "crypto.h"
 
 #define SOCKET_LOG_PATH "/var/log/socket_log.log"
 
@@ -327,6 +328,7 @@ int pkt_filter(struct rte_mbuf *m)
 	{
 		char *data_origin = NULL;
 		int data_len = 0;
+		int ret = 0;
 		char key[32] = {0};
 		int key_len = 0;
 		char result[2000] = {0};
@@ -383,20 +385,8 @@ int pkt_filter(struct rte_mbuf *m)
 				//对应加密头能不能取出密钥,能取出密钥，则需解密
 				if (apply_config(&hD, DEC_IN, enc_header, key, data_len))
 				{
-					switch (enc_header->encType)
-					{
-					case aes_cbc:
-						//result_len = do_aes_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, "a", 0, result);
-						break;
-					case sm4_ecb:
-						result_len = do_sm4_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, result);
-						break;
-					default:
-						printf("%d Encryption algorithms are not supported yet!!\n", enc_header->encType);
-						result_len = -1;
-						break;
-					}
-					if (result_len < 0)
+					ret = Decrypt(enc_header->encType, (data_origin + sizeof(struct encHeader)), (data_len - sizeof(struct encHeader)), result, &result_len, key, key_len);
+					if (result_len < 0||ret < 0)
 					{
 						printf("tcp do_%x_encrypt dec fail!!\n", enc_header->encType);
 						return true;
@@ -404,7 +394,7 @@ int pkt_filter(struct rte_mbuf *m)
 					else
 					{
 						//填充检查，检验填充了几位
-						padding_len = padding_check(result, result_len);
+						padding_len = (data_len - sizeof(struct encHeader)) - result_len;
 						if (!padding_len) //解密后数据肯定有扩充，没有则是出错报文
 						{
 							printHex(result, result_len, 0, "padding_len error");
@@ -412,7 +402,7 @@ int pkt_filter(struct rte_mbuf *m)
 						}
 						else
 						{
-							memcpy(data_origin, result, result_len - padding_len);
+							memcpy(data_origin, result, result_len);
 							m->data_len = m->data_len - padding_len - sizeof(struct encHeader);
 
 							iphdr->total_length = iphdr->total_length - padding_len - sizeof(struct encHeader); //remove padding from length
@@ -421,14 +411,14 @@ int pkt_filter(struct rte_mbuf *m)
 							if (IPPROTO_TCP == iphdr->next_proto_id) //处理TCP报文
 							{
 								tcphdr->cksum = 0;
-								tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) * 4 - padding_len), IPPROTO_TCP, tcphdr));
+								tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) * 4), IPPROTO_TCP, tcphdr));
 								return true; //解密完成后直接接收
 							}
 							else//处理UDP报文
 							{
 								udphdr->dgram_len = udphdr->dgram_len - padding_len - sizeof(struct encHeader);
 								udphdr->dgram_cksum = 0;
-								udphdr->dgram_cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + 8 - padding_len), IPPROTO_UDP, udphdr));
+								udphdr->dgram_cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + 8), IPPROTO_UDP, udphdr));
 								return true; //解密完成后直接接收
 							}
 						}
@@ -441,20 +431,8 @@ int pkt_filter(struct rte_mbuf *m)
 		//对应hD能不能取出密钥
 		if (apply_config(&hD, ENC_OUT, &enc_header, key, data_len)) //能取出密钥，则报文需要进行加密处理
 		{
-			switch (enc_header.encType)
-			{
-			case aes_cbc:
-				//result_len = do_aes_encrypt(data_origin + sizeof(struct encHeader), data_len - sizeof(struct encHeader), DEC_IN, &key, key_len, "a", 0, result);
-				break;
-			case sm4_ecb:
-				result_len = do_sm4_encrypt(data_origin, data_len, DEC_IN, key, key_len, result);
-				break;
-			default:
-				printf("%d Encryption algorithms are not supported yet!!\n", enc_header.encType);
-				result_len = -1;
-				break;
-			}
-			if (result_len < 0)
+			ret = Encrypt(enc_header.encType, data_origin, data_len, result, &result_len, key, key_len);
+			if (result_len < 0||ret < 0)
 			{
 				printf("do_%d_encrypt enc fail!!\n", enc_header.encType);
 				return true;
