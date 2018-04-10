@@ -624,9 +624,9 @@ l2fwd_main_loop(struct l2fwd_crypto_options *options)
 				generate_random_key(port_cparams[i].cipher_iv.data,
 						port_cparams[i].cipher_iv.length);
 
-			port_cparams[i].cipher_algo = options->cipher_xform.cipher.algo;
+			//port_cparams[i].cipher_algo = options->cipher_xform.cipher.algo;
 			// add enc or dec
-			port_cparams[i].cipher_op = options->cipher_xform.cipher.op;
+			//port_cparams[i].cipher_op = options->cipher_xform.cipher.op;
 			/* Set IV parameters */
 			options->cipher_xform.cipher.iv.offset = IV_OFFSET;
 			options->cipher_xform.cipher.iv.length =
@@ -2327,16 +2327,16 @@ main(int argc, char **argv)
 	argc -= ret;
 	argv += ret;
 
-	/* reserve memory for Cipher/Auth key and IV */
+	/* reserve memory for Cipher/Auth key and IV 申请储存空间用来存储密钥、IV等*/
 	reserve_key_memory(&options);
-
+	
 	/* parse application arguments (after the EAL ones) 处理入参，结果保存进配置*/
 	ret = l2fwd_crypto_parse_args(&options, argc, argv);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid L2FWD-CRYPTO arguments\n");
 
-	printf("MAC updating %s\n",
-			options.mac_updating ? "enabled" : "disabled");
+	printf("MAC updating %s\n",options.mac_updating ? "enabled" : "disabled");
+	
 	// 每个内核线程两个拥有2个内存池
 	/* create the mbuf pool 创建内存池*/
 	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", NB_MBUF, 512,
@@ -2346,7 +2346,7 @@ main(int argc, char **argv)
 		rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
 	/* create crypto op pool 创建加密内存池*/
-	l2fwd_crypto_op_pool = rte_crypto_op_pool_create("crypto_op_pool",
+	l2fwd_crypto_op_pool =   rte_crypto_op_pool_create("crypto_op_pool",
 			RTE_CRYPTO_OP_TYPE_SYMMETRIC, NB_MBUF, 128, MAXIMUM_IV_LENGTH,
 			rte_socket_id());
 	if (l2fwd_crypto_op_pool == NULL)
@@ -2357,7 +2357,7 @@ main(int argc, char **argv)
 	if (enabled_portcount < 1)
 		rte_exit(EXIT_FAILURE, "Failed to initial Ethernet ports\n");
 
-	nb_ports = rte_eth_dev_count();
+	nb_ports = rte_eth_dev_count();//计算可用的端口数量
 	/* Initialize the port/queue configuration of each logical core */
 	for (rx_lcore_id = 0, qconf = NULL, portid = 0;
 			portid < nb_ports; portid++) 
