@@ -48,6 +48,8 @@
 int sockfd;
 void* ip2id;
 void* id2data;
+#pragma pack(push)
+#pragma pack(1)
 struct ip_struct
 {
 	unsigned char sIP[4];
@@ -131,7 +133,7 @@ struct psd_header //6 用于计算校验和
 	char ptcl;
 	unsigned short tcpl;
 };
-
+#pragma pack(pop)
 unsigned char rcv_cfg(char* msg_addr, int msg_len);
 unsigned char rcv_key(char* msg_addr, int msg_len);
 unsigned char rcv_reply(char* msg_addr, int msg_len);

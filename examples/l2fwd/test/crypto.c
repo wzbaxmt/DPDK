@@ -102,7 +102,7 @@ int SM4Decrypt(BYTE *InSource, int InSourceLen, BYTE *OutDest, int *OutDestLen, 
 
 	sm4_setkey_dec(&ctx,InKey);
 	sm4_crypt_ecb(&ctx,0, InSourceLen, InSource, OutDest);
-
+	
 	*OutDestLen = InSourceLen - GetPaddingDataLen(OutDest, InSourceLen);
 
 	return 0;
@@ -129,7 +129,7 @@ int Decrypt(CryptTypeE eType, BYTE *InSource, int InSourceLen, BYTE *OutDest, in
 {
 	if(eType >= CRYPTO_MAX || eType <= CRYPTO_NULL)
 		return -1;
-
+	printHex(InSource, InSourceLen, 0, "Decrypt before");
 	switch(eType){
 		case CRYPTO_AES_CBC:
 			return AesDecrypt(InSource, InSourceLen, OutDest, OutDestLen, InKey, InKeyLen);
@@ -139,7 +139,7 @@ int Decrypt(CryptTypeE eType, BYTE *InSource, int InSourceLen, BYTE *OutDest, in
 		default:
 			break;
 	}
-
+	printHex(OutDest, *OutDestLen, InSourceLen - *OutDestLen, "Decrypt after");
 	return 0;
 }
 

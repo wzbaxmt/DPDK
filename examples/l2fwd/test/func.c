@@ -298,6 +298,7 @@ static int enc_msg_check(void *enc_data, int enc_len)
 	new_msglen = enc_len;
 	if (new_msglen == htons(enc_header->msglen) && new_crc == rcv_crc)
 	{
+		enc_header->CRC = rcv_crc;
 #ifdef DEBUG
 		printf("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
 		printf("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
@@ -306,6 +307,7 @@ static int enc_msg_check(void *enc_data, int enc_len)
 	}
 	else
 	{
+		enc_header->CRC = rcv_crc;
 		printHex(enc_header, sizeof(struct encHeader), 0, "enc_msg_check");
 		printf("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
 		printf("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
@@ -334,7 +336,7 @@ int pkt_filter(struct rte_mbuf *m)
 		char result[2000] = {0};
 		int result_len = 0;
 		int padding_len = 0;
-		struct encHeader enc_header = {0};
+		struct encHeader enc_header = {1};
 		struct tcp_hdr *tcphdr = NULL;
 		struct udp_hdr *udphdr = NULL;
 		
@@ -348,23 +350,24 @@ int pkt_filter(struct rte_mbuf *m)
 		printHex(&hD, sizeof(hD), 0, "hD");
 		if (IPPROTO_TCP == iphdr->next_proto_id) //处理TCP报文
 		{
-			printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
+			//printHex((m->buf_addr + m->data_off), m->data_len, 0, "TCP packet");
 			tcphdr = (struct tcp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl & 0x0f) * 4);
-			printHex(tcphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "TCP packet");
+			//printHex(tcphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "TCP packet");
 			data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - (tcphdr->data_off >> 4) * 4;
 			data_origin = (void *)tcphdr + (tcphdr->data_off >> 4) * 4;
-			printHex(data_origin, data_len, 0, "TCP data");
+			//printHex(data_origin, data_len, 0, "TCP data");
 			memcpy(hD.sPort, &tcphdr->src_port, 2);
 			memcpy(hD.dPort, &tcphdr->dst_port, 2);
 		}
 		else if (IPPROTO_UDP == iphdr->next_proto_id) //处理UDP报文
 		{
-			printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
+			//printHex((m->buf_addr + m->data_off), m->data_len, 0, "UDP packet");
 			udphdr = (struct udp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl & 0x0f) * 4);
-			printHex(udphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "UDP packet");
+			//printHex(udphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "UDP packet");
 			data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - 8;
+			printf("data_len = %d\n",data_len);
 			data_origin = (void *)udphdr + 8;
-			printHex(data_origin, data_len, 0, "UDP data");
+			//printHex(data_origin, data_len, 0, "UDP data");
 			memcpy(hD.sPort, &udphdr->src_port, 2);
 			memcpy(hD.dPort, &udphdr->dst_port, 2);
 		}
@@ -372,8 +375,8 @@ int pkt_filter(struct rte_mbuf *m)
 		{
 			return true;
 		}
-
-		if (*data_origin == 0xff) //初步判断是加密报文
+		printf("data_origin[0]=%x\n",(unsigned char)data_origin[0]);
+		if ((unsigned char)data_origin[0] == 0xff) //初步判断是加密报文
 		{ 
 			struct encHeader *enc_header = (struct encHeader *)data_origin;
 			if (!enc_msg_check(data_origin, data_len)) //不是加密报文
@@ -383,19 +386,24 @@ int pkt_filter(struct rte_mbuf *m)
 			else //是加密报文
 			{
 				//对应加密头能不能取出密钥,能取出密钥，则需解密
-				if (apply_config(&hD, DEC_IN, enc_header, key, data_len))
+				key_len = apply_config(&hD, DEC_IN, enc_header, key, data_len);
+				if (key_len)
 				{
 					ret = Decrypt(enc_header->encType, (data_origin + sizeof(struct encHeader)), (data_len - sizeof(struct encHeader)), result, &result_len, key, key_len);
+					printf("data_len = %d,sizeof(struct encHeader) = %d,result_len=%d\n",data_len,sizeof(struct encHeader),result_len);
+					//		1242			26							1106
 					if (result_len < 0||ret < 0)
 					{
-						printf("tcp do_%x_encrypt dec fail!!\n", enc_header->encType);
+						printf("do_%x_encrypt dec fail!!\n", enc_header->encType);
 						return true;
 					}
 					else
 					{
+						printf("do_%d_encrypt dec success!!\n", enc_header->encType);
+						printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
 						//填充检查，检验填充了几位
 						padding_len = (data_len - sizeof(struct encHeader)) - result_len;
-						if (!padding_len) //解密后数据肯定有扩充，没有则是出错报文
+						if (padding_len < 1||padding_len > 16) //解密后数据肯定有扩充，没有则是出错报文
 						{
 							printHex(result, result_len, 0, "padding_len error");
 							return true;
@@ -403,15 +411,20 @@ int pkt_filter(struct rte_mbuf *m)
 						else
 						{
 							memcpy(data_origin, result, result_len);
-							m->data_len = m->data_len - padding_len - sizeof(struct encHeader);
-
+							printf("before m->data_len = %d\n",m->data_len);//1296
+							m->data_len = m->data_len - padding_len - sizeof(struct encHeader);//1160=1296-26-x,x=110
+							m->pkt_len = m->data_len;
+							printf("after m->data_len = %d\n",m->data_len);//1160
+							printf("before iphdr->total_length = %x\n",iphdr->total_length);
 							iphdr->total_length = iphdr->total_length - padding_len - sizeof(struct encHeader); //remove padding from length
+							printf("after m->data_len = %d\n",m->data_len);
 							iphdr->hdr_checksum = 0;
 							iphdr->hdr_checksum = rte_ipv4_cksum(iphdr);
 							if (IPPROTO_TCP == iphdr->next_proto_id) //处理TCP报文
 							{
 								tcphdr->cksum = 0;
 								tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) * 4), IPPROTO_TCP, tcphdr));
+								printHex((m->buf_addr + m->data_off), m->data_len, 0, "TCP packet after dec");
 								return true; //解密完成后直接接收
 							}
 							else//处理UDP报文
@@ -419,6 +432,7 @@ int pkt_filter(struct rte_mbuf *m)
 								udphdr->dgram_len = udphdr->dgram_len - padding_len - sizeof(struct encHeader);
 								udphdr->dgram_cksum = 0;
 								udphdr->dgram_cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + 8), IPPROTO_UDP, udphdr));
+								printHex((m->buf_addr + m->data_off), m->data_len, 0, "UDP packet after dec");
 								return true; //解密完成后直接接收
 							}
 						}
@@ -429,9 +443,11 @@ int pkt_filter(struct rte_mbuf *m)
 		/*****如果之前没有返回，则报文可能需要加密***/
 
 		//对应hD能不能取出密钥
-		if (apply_config(&hD, ENC_OUT, &enc_header, key, data_len)) //能取出密钥，则报文需要进行加密处理
+		key_len = apply_config(&hD, ENC_OUT, &enc_header, key, data_len);
+		if (key_len) //能取出密钥，则报文需要进行加密处理
 		{
 			ret = Encrypt(enc_header.encType, data_origin, data_len, result, &result_len, key, key_len);
+			printf("data_len = %d,sizeof(struct encHeader) = %d,result_len=%d\n",data_len,sizeof(struct encHeader),result_len);
 			if (result_len < 0||ret < 0)
 			{
 				printf("do_%d_encrypt enc fail!!\n", enc_header.encType);
@@ -439,19 +455,28 @@ int pkt_filter(struct rte_mbuf *m)
 			}
 			else
 			{
+				printf("do_%d_encrypt enc success!!\n", enc_header.encType);
+				printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
 				enc_header.msglen = htons(result_len + sizeof(struct encHeader));
 				enc_header.CRC = 0x0000;
 				memcpy(data_origin, &enc_header, sizeof(struct encHeader));
 				memcpy(data_origin + sizeof(struct encHeader), result, result_len);
 				enc_header.CRC = htons(chksum_t(data_origin, result_len + sizeof(struct encHeader))); //计算校验和，算法与设备端一致
-
+				memcpy(data_origin, &enc_header, sizeof(struct encHeader));
+				printf("before iphdr->total_length = %x\n",iphdr->total_length);
 				iphdr->total_length = iphdr->total_length + result_len - data_len + sizeof(struct encHeader); //remove padding from length
+				printf("after iphdr->total_length = %x\n",iphdr->total_length);
 				iphdr->hdr_checksum = 0;
 				iphdr->hdr_checksum = rte_ipv4_cksum(iphdr); //re-checksum for IP
+				printf("before m->data_len = %d\n",m->data_len);
+				m->data_len = m->data_len + result_len - data_len + sizeof(struct encHeader);
+				m->pkt_len = m->data_len;
+				printf("after m->data_len = %d\n",m->data_len);
 				if (IPPROTO_TCP == iphdr->next_proto_id) //处理TCP报文
 				{
 					tcphdr->cksum = 0;
 					tcphdr->cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + (tcphdr->data_off >> 4) * 4 + sizeof(struct encHeader)), IPPROTO_TCP, tcphdr));
+					printHex((m->buf_addr + m->data_off), m->data_len, 0, "TCP packet after enc");
 					return true;
 				}
 				else
@@ -459,6 +484,7 @@ int pkt_filter(struct rte_mbuf *m)
 					udphdr->dgram_len = udphdr->dgram_len + (result_len - data_len) + sizeof(struct encHeader);
 					udphdr->dgram_cksum = 0;
 					udphdr->dgram_cksum = htons(get_tcp_udp_checksum(iphdr->src_addr, iphdr->dst_addr, (result_len + 8 + sizeof(struct encHeader)), IPPROTO_UDP, udphdr));
+					printHex((m->buf_addr + m->data_off), m->data_len, 0, "UDP packet after enc");
 					return true; //解密完成后直接接收
 				}
 			}

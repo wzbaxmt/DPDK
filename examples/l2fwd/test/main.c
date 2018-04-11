@@ -576,8 +576,8 @@ main(int argc, char **argv)
 	unsigned nb_ports_in_mask = 0;
 	
 	init_hashmap();
-	init_connect();
-	connect_to_server();
+	//init_connect();
+	//connect_to_server();
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
 	if (ret < 0)
@@ -785,7 +785,7 @@ main(int argc, char **argv)
 		rte_eth_dev_close(portid);
 		printf(" Done\n");
 	}
-	destory_connect();
+	//destory_connect();
 	destroy_hashmap();
 	printf("Bye...\n");
 

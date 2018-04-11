@@ -399,7 +399,7 @@ int rcv_msg(char *msg_addr, int msg_len)
 //key			加密密钥的指针
 //pkt_len		此报文的长度
 //key_len		返回值 0 无需操作 其他 加密密钥长度
-int apply_config(struct ip_struct *ip_data, int in_out, struct encHeader *enc_header, char *key, int pkt_len)
+int apply_config2(struct ip_struct *ip_data, int in_out, struct encHeader *enc_header, char *key, int pkt_len)
 {
 	int key_len = 0;
 	int err = 0;
@@ -498,6 +498,34 @@ int apply_config(struct ip_struct *ip_data, int in_out, struct encHeader *enc_he
 				}
 			}
 		}
+	}
+	else
+	{
+		printf("not support yet!\n");
+	}
+	return key_len;
+}
+int apply_config(struct ip_struct *ip_data, int in_out, struct encHeader *enc_header, char *key, int pkt_len)
+{
+	int key_len = 0;
+	unsigned char zero[16] = {0};
+	char keyID[KIDLen] = {0};
+	if (ENC_OUT == in_out) //发出的报文，需要加密？
+	{
+		key_len = 32;
+		memset(key, 0, key_len);
+		enc_header->flag = 0xff;
+		enc_header->encType = 0x06; //采用SM4加密
+		memcpy(enc_header->keyID, &keyID, KIDLen);
+	}
+	else if (DEC_IN == in_out) //进来的报文，需要解密?
+	{
+		if (0 != memcmp(&enc_header->keyID, &zero, 16)) //目前只根据目的IP确定DeviceID
+		{
+			return 0;
+		}
+		key_len = 32;
+		memset(key, 0, key_len);
 	}
 	else
 	{
