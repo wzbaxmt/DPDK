@@ -4,7 +4,6 @@
 #include <rte_udp.h>
 #include <arpa/inet.h>
 
-
 /*
  * 为本地DPDK端代码
  * 主要为与业务无关的代码
@@ -37,17 +36,23 @@ typedef unsigned int u32;
 #define ENC_OUT 1
 #define DEC_IN 0
 
+#ifdef DEBUG  
+#define DEBUG(format,...) printf("File: "__FILE__", Line: %05d: "format"/n", __LINE__, ##__VA_ARGS__)  
+#else  
+#define DEBUG(format,...)  
+#endif  
+
 void printHex(char *data, int data_len, int padding_len, char *pt_mark)
 {
 	int i = 0;
-	printf("[%s]length=%d:%d;Data Content:\n", pt_mark, data_len, padding_len);
+	DEBUG("[%s]length=%d:%d;Data Content:\n", pt_mark, data_len, padding_len);
 	for (i = 0; i < (data_len + padding_len); i++)
 	{
 		if (0 == (i % 16) && i != 0)
-			printf("[%d]\n", i / 16);
-		printf("%02x ", data[i] & 0xFF);
+			DEBUG("[%d]\n", i / 16);
+		DEBUG("%02x ", data[i] & 0xFF);
 	}
-	printf("\n");
+	DEBUG("\n");
 }
 
 unsigned long read_uc_dat(unsigned char **p_conf, unsigned char number)
@@ -57,7 +62,7 @@ unsigned long read_uc_dat(unsigned char **p_conf, unsigned char number)
 	int i;
 	if ((number < 1) || (number > 4))
 	{
-		printf("Error! number %d not right", number);
+		DEBUG("Error! number %d not right", number);
 		return -1;
 	}
 	ptemp = *p_conf;
@@ -76,7 +81,7 @@ int socket_syslog_write(char *strto)
 
 	if (NULL == (fd = fopen(SOCKET_LOG_PATH, "a+")))
 	{
-		printf("fopen /var/log/socket_log.log error!\n");
+		DEBUG("fopen /var/log/socket_log.log error!\n");
 		return -1;
 	}
 	fputs(strto, fd);
@@ -90,7 +95,7 @@ int socket_syslog_write_hex(char *data, int data_len, int padding_len, char *str
 	int i;
 	if (NULL == (fd = fopen(SOCKET_LOG_PATH, "a+")))
 	{
-		printf("fopen /var/log/socket_log.log error!\n");
+		DEBUG("fopen /var/log/socket_log.log error!\n");
 		return -1;
 	}
 	fprintf(fd, "[%s]length=%d:%d;Data Content:\n", strto, data_len, padding_len);
@@ -152,7 +157,7 @@ static int do_sm4_encrypt(char *data_in, int data_len, int enc_dec, char *key_in
 {
 	if (data_len % 16 != 0 && enc_dec == DEC_IN) //流入的需解密的报文必须是16字节的整数倍
 	{
-		printf("do_sm4_encrypt data_len%16 != 0  && enc_dec == DEC_IN !\n");
+		DEBUG("do_sm4_encrypt data_len%16 != 0  && enc_dec == DEC_IN !\n");
 		return -1;
 	}
 
@@ -171,7 +176,7 @@ static int do_sm4_encrypt(char *data_in, int data_len, int enc_dec, char *key_in
 	{
 		//加密
 		ret = SM4ECBEncrypt(result, buf, (data_len + padding_len), key_in);
-		printf("SM4 encrypt success***********************\n");
+		DEBUG("SM4 encrypt success***********************\n");
 #ifdef DEBUG
 		printHex(buf, data_len, padding_len, "SM4ECBEncrypt buf is");
 #endif
@@ -180,7 +185,7 @@ static int do_sm4_encrypt(char *data_in, int data_len, int enc_dec, char *key_in
 	{
 		//解密
 		ret = SM4ECBDecrypt(result, buf, (data_len + padding_len), key_in);
-		printf("SM4 decrypt success***********************\n");
+		DEBUG("SM4 decrypt success***********************\n");
 #ifdef DEBUG
 		printHex(buf, data_len, padding_len, "SM4ECBDecrypt buf is");
 #endif
@@ -292,8 +297,8 @@ static int enc_msg_check(void *enc_data, int enc_len)
 	{
 		enc_header->CRC = rcv_crc;
 #ifdef DEBUG
-		printf("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
-		printf("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
+		DEBUG("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
+		DEBUG("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
 #endif
 		return 1;
 	}
@@ -301,8 +306,8 @@ static int enc_msg_check(void *enc_data, int enc_len)
 	{
 		enc_header->CRC = rcv_crc;
 		printHex(enc_header, sizeof(struct encHeader), 0, "enc_msg_check");
-		printf("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
-		printf("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
+		DEBUG("rcv_crc %x,new_crc %x\n", rcv_crc, new_crc);
+		DEBUG("new_msglen %d , enc_header->msglen %d\n", new_msglen, htons(enc_header->msglen));
 		return 0;
 	}
 #else
@@ -313,12 +318,14 @@ static int enc_msg_check(void *enc_data, int enc_len)
 
 int pkt_filter(struct rte_mbuf *m)
 {
-	printf("**********************************************************************************\n");
+#ifdef DEBUG
+	DEBUG("**********************************************************************************\n");
+#endif
 	struct ipv4_hdr *iphdr;
 	uint32_t dest_addr;
 	unsigned short type;
 	memcpy(&type, (m->buf_addr + m->data_off + MAC_LEN), 2);
-	//printf("type = %04x\n", type);
+	//DEBUG("type = %04x\n", type);
 	if (type == IP_PROTOCOL) //暂时只处理IP报文
 	{
 		char *data_origin = NULL;
@@ -335,16 +342,16 @@ int pkt_filter(struct rte_mbuf *m)
 		struct udp_hdr *udphdr = NULL;
 		int ip_len;
 		iphdr = (struct ipv4_hdr *)(m->buf_addr + m->data_off + L2_LEN);
-		printf("iphdr->total_length = %x\n",iphdr->total_length);
-		printf("htons(iphdr->total_length) = %x\n",htons(iphdr->total_length));
+		DEBUG("iphdr->total_length = %x\n",iphdr->total_length);
+		DEBUG("htons(iphdr->total_length) = %x\n",htons(iphdr->total_length));
 		ip_len = (int)htons(iphdr->total_length);
 		if(ip_len > 1500)
 		{
 			printHex((m->buf_addr + m->data_off), m->data_len, 0, "error packet");
 			return true;
 		}
-		printf("ip_len = %d,%x\n",ip_len,ip_len);
-		printf("buf_addr = %p, data_off = %d, pkt_len = %d, data_len = %d, buf_len = %d\n", m->buf_addr, m->data_off, m->pkt_len, m->data_len, m->buf_len);
+		DEBUG("ip_len = %d,%x\n",ip_len,ip_len);
+		DEBUG("buf_addr = %p, data_off = %d, pkt_len = %d, data_len = %d, buf_len = %d\n", m->buf_addr, m->data_off, m->pkt_len, m->data_len, m->buf_len);
 		struct ip_struct hD = {0};
 		memcpy(hD.sMac, m->buf_addr + m->data_off + 6, 6);
 		memcpy(hD.dMac, m->buf_addr + m->data_off, 6);
@@ -358,8 +365,8 @@ int pkt_filter(struct rte_mbuf *m)
 			//printHex(tcphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "TCP packet");
 			//data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - (tcphdr->data_off >> 4) * 4;
 			data_len = ip_len - (iphdr->version_ihl & 0x0f) * 4 - (tcphdr->data_off >> 4) * 4;
-			printf("data_len = %d\n",data_len);
-			printf("ip_len = %d\n",ip_len);
+			DEBUG("data_len = %d\n",data_len);
+			DEBUG("ip_len = %d\n",ip_len);
 			data_origin = (void *)tcphdr + (tcphdr->data_off >> 4) * 4;
 			//printHex(data_origin, data_len, 0, "TCP data");
 			memcpy(hD.sPort, &tcphdr->src_port, 2);
@@ -372,8 +379,8 @@ int pkt_filter(struct rte_mbuf *m)
 			//printHex(udphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "UDP packet");
 			//data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - 8;
 			data_len = ip_len - (iphdr->version_ihl & 0x0f) * 4 - 8;
-			printf("data_len = %d\n",data_len);
-			printf("ip_len = %d\n",ip_len);
+			DEBUG("data_len = %d\n",data_len);
+			DEBUG("ip_len = %d\n",ip_len);
 			data_origin = (void *)udphdr + 8;
 			//printHex(data_origin, data_len, 0, "UDP data");
 			memcpy(hD.sPort, &udphdr->src_port, 2);
@@ -383,7 +390,7 @@ int pkt_filter(struct rte_mbuf *m)
 		{
 			return true;
 		}
-		printf("data_origin[0]=%x\n",(unsigned char)data_origin[0]);
+		DEBUG("data_origin[0]=%x\n",(unsigned char)data_origin[0]);
 		if ((unsigned char)data_origin[0] == 0xff) //初步判断是加密报文
 		{ 
 			struct encHeader *enc_header = (struct encHeader *)data_origin;
@@ -398,16 +405,16 @@ int pkt_filter(struct rte_mbuf *m)
 				if (key_len)
 				{
 					ret = Decrypt(enc_header->encType, (data_origin + sizeof(struct encHeader)), (data_len - sizeof(struct encHeader)), result, &result_len, key, key_len);
-					printf("data_len = %d,sizeof(struct encHeader) = %d,result_len=%d\n",data_len,sizeof(struct encHeader),result_len);
+					DEBUG("data_len = %d,sizeof(struct encHeader) = %d,result_len=%d\n",data_len,sizeof(struct encHeader),result_len);
 					//		1242			26							1106
 					if (result_len < 0||ret < 0)
 					{
-						printf("do_%x_encrypt dec fail!!\n", enc_header->encType);
+						DEBUG("do_%x_encrypt dec fail!!\n", enc_header->encType);
 						return true;
 					}
 					else
 					{
-						printf("do_%d_encrypt dec success!!\n", enc_header->encType);
+						DEBUG("do_%d_encrypt dec success!!\n", enc_header->encType);
 						printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
 						//填充检查，检验填充了几位
 						padding_len = (data_len - sizeof(struct encHeader)) - result_len;
@@ -419,13 +426,13 @@ int pkt_filter(struct rte_mbuf *m)
 						else
 						{
 							memcpy(data_origin, result, result_len);
-							printf("before m->data_len = %d\n",m->data_len);//1296
+							DEBUG("before m->data_len = %d\n",m->data_len);//1296
 							m->data_len = m->data_len - padding_len - sizeof(struct encHeader);//1160=1296-26-x,x=110
 							m->pkt_len = m->data_len;
-							printf("after m->data_len = %d\n",m->data_len);//1160
-							printf("before iphdr->total_length = %x\n",iphdr->total_length);
+							DEBUG("after m->data_len = %d\n",m->data_len);//1160
+							DEBUG("before iphdr->total_length = %x\n",iphdr->total_length);
 							iphdr->total_length = ntohs(htons(iphdr->total_length) - padding_len - sizeof(struct encHeader)); //remove padding from length
-							printf("after m->data_len = %d\n",m->data_len);
+							DEBUG("after m->data_len = %d\n",m->data_len);
 							iphdr->hdr_checksum = 0;
 							iphdr->hdr_checksum = rte_ipv4_cksum(iphdr);
 							if (IPPROTO_TCP == iphdr->next_proto_id) //处理TCP报文
@@ -456,15 +463,15 @@ int pkt_filter(struct rte_mbuf *m)
 		{
 			memcpy(buf, data_origin, data_len);
 			ret = Encrypt(enc_header.encType, buf, data_len, result, &result_len, key, key_len);
-			printf("data_len = %d,sizeof(struct encHeader) = %d,result_len=%d\n",data_len,sizeof(struct encHeader),result_len);
+			DEBUG("data_len = %d,sizeof(struct encHeader) = %d,result_len=%d\n",data_len,sizeof(struct encHeader),result_len);
 			if (result_len < 0||ret < 0)
 			{
-				printf("do_%d_encrypt enc fail!!\n", enc_header.encType);
+				DEBUG("do_%d_encrypt enc fail!!\n", enc_header.encType);
 				return true;
 			}
 			else
 			{
-				printf("do_%d_encrypt enc success!!\n", enc_header.encType);
+				DEBUG("do_%d_encrypt enc success!!\n", enc_header.encType);
 				printHex((m->buf_addr + m->data_off), m->data_len, 0, "packet");
 				enc_header.msglen = htons(result_len + sizeof(struct encHeader));
 				enc_header.CRC = 0x0000;
@@ -472,15 +479,15 @@ int pkt_filter(struct rte_mbuf *m)
 				memcpy(data_origin + sizeof(struct encHeader), result, result_len);
 				enc_header.CRC = htons(chksum_t(data_origin, result_len + sizeof(struct encHeader))); //计算校验和，算法与设备端一致
 				memcpy(data_origin, &enc_header, sizeof(struct encHeader));
-				printf("before iphdr->total_length = %x\n",iphdr->total_length);
+				DEBUG("before iphdr->total_length = %x\n",iphdr->total_length);
 				iphdr->total_length = ntohs(htons(iphdr->total_length) + result_len - data_len + sizeof(struct encHeader)); //remove padding from length
-				printf("after iphdr->total_length = %x\n",iphdr->total_length);
+				DEBUG("after iphdr->total_length = %x\n",iphdr->total_length);
 				iphdr->hdr_checksum = 0;
 				iphdr->hdr_checksum = rte_ipv4_cksum(iphdr); //re-checksum for IP
-				printf("before m->data_len = %d\n",m->data_len);
+				DEBUG("before m->data_len = %d\n",m->data_len);
 				m->data_len = m->data_len + result_len - data_len + sizeof(struct encHeader);
 				m->pkt_len = m->data_len;
-				printf("after m->data_len = %d\n",m->data_len);
+				DEBUG("after m->data_len = %d\n",m->data_len);
 				if (IPPROTO_TCP == iphdr->next_proto_id) //处理TCP报文
 				{
 					tcphdr->cksum = 0;
