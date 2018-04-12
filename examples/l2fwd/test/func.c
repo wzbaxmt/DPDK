@@ -147,14 +147,6 @@ int SM4ECBDecrypt(BYTE *dest, BYTE *source, int sourceLen, BYTE *key)
 	return 0;
 }
 
-//补齐至16字节（128位）
-static char padding_fill(int data_len)
-{
-	char tmp_len = 0;
-	tmp_len = data_len % 16;
-	tmp_len = (tmp_len == 0 ? 16 : 16 - tmp_len);
-	return tmp_len;
-}
 
 static int do_sm4_encrypt(char *data_in, int data_len, int enc_dec, char *key_in, int key_len, char *result)
 {
@@ -321,6 +313,7 @@ static int enc_msg_check(void *enc_data, int enc_len)
 
 int pkt_filter(struct rte_mbuf *m)
 {
+	printf("**********************************************************************************\n");
 	struct ipv4_hdr *iphdr;
 	uint32_t dest_addr;
 	unsigned short type;
@@ -333,14 +326,24 @@ int pkt_filter(struct rte_mbuf *m)
 		int ret = 0;
 		char key[32] = {0};
 		int key_len = 0;
+		char buf[2000] = {1};
 		char result[2000] = {0};
 		int result_len = 0;
 		int padding_len = 0;
 		struct encHeader enc_header = {1};
 		struct tcp_hdr *tcphdr = NULL;
 		struct udp_hdr *udphdr = NULL;
-		
+		int ip_len;
 		iphdr = (struct ipv4_hdr *)(m->buf_addr + m->data_off + L2_LEN);
+		printf("iphdr->total_length = %x\n",iphdr->total_length);
+		printf("htons(iphdr->total_length) = %x\n",htons(iphdr->total_length));
+		ip_len = (int)htons(iphdr->total_length);
+		if(ip_len > 1500)
+		{
+			printHex((m->buf_addr + m->data_off), m->data_len, 0, "error packet");
+			return true;
+		}
+		printf("ip_len = %d,%x\n",ip_len,ip_len);
 		printf("buf_addr = %p, data_off = %d, pkt_len = %d, data_len = %d, buf_len = %d\n", m->buf_addr, m->data_off, m->pkt_len, m->data_len, m->buf_len);
 		struct ip_struct hD = {0};
 		memcpy(hD.sMac, m->buf_addr + m->data_off + 6, 6);
@@ -353,7 +356,10 @@ int pkt_filter(struct rte_mbuf *m)
 			//printHex((m->buf_addr + m->data_off), m->data_len, 0, "TCP packet");
 			tcphdr = (struct tcp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl & 0x0f) * 4);
 			//printHex(tcphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "TCP packet");
-			data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - (tcphdr->data_off >> 4) * 4;
+			//data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - (tcphdr->data_off >> 4) * 4;
+			data_len = ip_len - (iphdr->version_ihl & 0x0f) * 4 - (tcphdr->data_off >> 4) * 4;
+			printf("data_len = %d\n",data_len);
+			printf("ip_len = %d\n",ip_len);
 			data_origin = (void *)tcphdr + (tcphdr->data_off >> 4) * 4;
 			//printHex(data_origin, data_len, 0, "TCP data");
 			memcpy(hD.sPort, &tcphdr->src_port, 2);
@@ -364,8 +370,10 @@ int pkt_filter(struct rte_mbuf *m)
 			//printHex((m->buf_addr + m->data_off), m->data_len, 0, "UDP packet");
 			udphdr = (struct udp_hdr *)(m->buf_addr + m->data_off + L2_LEN + (iphdr->version_ihl & 0x0f) * 4);
 			//printHex(udphdr, m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4, 0, "UDP packet");
-			data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - 8;
+			//data_len = m->data_len - L2_LEN - (iphdr->version_ihl & 0x0f) * 4 - 8;
+			data_len = ip_len - (iphdr->version_ihl & 0x0f) * 4 - 8;
 			printf("data_len = %d\n",data_len);
+			printf("ip_len = %d\n",ip_len);
 			data_origin = (void *)udphdr + 8;
 			//printHex(data_origin, data_len, 0, "UDP data");
 			memcpy(hD.sPort, &udphdr->src_port, 2);
@@ -416,7 +424,7 @@ int pkt_filter(struct rte_mbuf *m)
 							m->pkt_len = m->data_len;
 							printf("after m->data_len = %d\n",m->data_len);//1160
 							printf("before iphdr->total_length = %x\n",iphdr->total_length);
-							iphdr->total_length = iphdr->total_length - padding_len - sizeof(struct encHeader); //remove padding from length
+							iphdr->total_length = ntohs(htons(iphdr->total_length) - padding_len - sizeof(struct encHeader)); //remove padding from length
 							printf("after m->data_len = %d\n",m->data_len);
 							iphdr->hdr_checksum = 0;
 							iphdr->hdr_checksum = rte_ipv4_cksum(iphdr);
@@ -446,7 +454,8 @@ int pkt_filter(struct rte_mbuf *m)
 		key_len = apply_config(&hD, ENC_OUT, &enc_header, key, data_len);
 		if (key_len) //能取出密钥，则报文需要进行加密处理
 		{
-			ret = Encrypt(enc_header.encType, data_origin, data_len, result, &result_len, key, key_len);
+			memcpy(buf, data_origin, data_len);
+			ret = Encrypt(enc_header.encType, buf, data_len, result, &result_len, key, key_len);
 			printf("data_len = %d,sizeof(struct encHeader) = %d,result_len=%d\n",data_len,sizeof(struct encHeader),result_len);
 			if (result_len < 0||ret < 0)
 			{
@@ -464,7 +473,7 @@ int pkt_filter(struct rte_mbuf *m)
 				enc_header.CRC = htons(chksum_t(data_origin, result_len + sizeof(struct encHeader))); //计算校验和，算法与设备端一致
 				memcpy(data_origin, &enc_header, sizeof(struct encHeader));
 				printf("before iphdr->total_length = %x\n",iphdr->total_length);
-				iphdr->total_length = iphdr->total_length + result_len - data_len + sizeof(struct encHeader); //remove padding from length
+				iphdr->total_length = ntohs(htons(iphdr->total_length) + result_len - data_len + sizeof(struct encHeader)); //remove padding from length
 				printf("after iphdr->total_length = %x\n",iphdr->total_length);
 				iphdr->hdr_checksum = 0;
 				iphdr->hdr_checksum = rte_ipv4_cksum(iphdr); //re-checksum for IP

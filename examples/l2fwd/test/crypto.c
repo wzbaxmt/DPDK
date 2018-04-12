@@ -86,10 +86,11 @@ int SM4Encrypt(BYTE *InSource, int InSourceLen, BYTE *OutDest, int *OutDestLen, 
 	sm4_setkey_enc(&ctx,InKey);
 
 	nDataPadd = PaddingData(InSource, InSourceLen);
-	sm4_crypt_ecb(&ctx, 1, InSourceLen, InSource, OutDest);
+	printHex(InSource, nDataPadd, 0, "SM4Encrypt before");
+	sm4_crypt_ecb(&ctx, 1, nDataPadd, InSource, OutDest);
 
 	*OutDestLen = nDataPadd;
-
+	printHex(OutDest, *OutDestLen, 0, "SM4Encrypt after");
 	return 0;
 }
 
@@ -104,14 +105,13 @@ int SM4Decrypt(BYTE *InSource, int InSourceLen, BYTE *OutDest, int *OutDestLen, 
 	sm4_crypt_ecb(&ctx,0, InSourceLen, InSource, OutDest);
 	
 	*OutDestLen = InSourceLen - GetPaddingDataLen(OutDest, InSourceLen);
-
+	printHex(OutDest, *OutDestLen, InSourceLen - *OutDestLen, "SM4Decrypt after");
 	return 0;
 }
 int Encrypt(CryptTypeE eType, BYTE *InSource, int InSourceLen, BYTE *OutDest, int *OutDestLen, BYTE *InKey, int InKeyLen)
 {
 	if(eType >= CRYPTO_MAX || eType <= CRYPTO_NULL)
 		return -1;
-
 	switch(eType){
 		case CRYPTO_AES_CBC:
 			return AesEncrypt(InSource, InSourceLen, OutDest, OutDestLen, InKey, InKeyLen);
@@ -139,7 +139,7 @@ int Decrypt(CryptTypeE eType, BYTE *InSource, int InSourceLen, BYTE *OutDest, in
 		default:
 			break;
 	}
-	printHex(OutDest, *OutDestLen, InSourceLen - *OutDestLen, "Decrypt after");
+	
 	return 0;
 }
 
