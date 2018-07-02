@@ -9,3 +9,17 @@ API documentation, and sample application information.
 
 For questions and usage discussions, subscribe to: users@dpdk.org
 Report bugs and issues to the development mailing list: dev@dpdk.org
+
+change:
+  on the base of l2fwd example, i achieve the function of encrypted data's forwording.
+  在l2fwd例程的基础上增加了对报文的加解密功能。
+test:
+  1000Mbps 
+  初步测试两台服务器端对端情况下千兆网卡能跑满。
+  
+to do:
+  control the encryption mode by tcp connection.
+  通过TCP连接控制加密模式
+  test the performance of 10000Mbps
+  测试万兆网卡下的表现
+  
